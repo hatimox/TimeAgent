@@ -1,7 +1,9 @@
 name: Release
 
-# Build macOS + Linux + Windows installers and publish to GitHub Releases
-# whenever you push a version tag (e.g. v1.0.1 or 1.0.1).
+# Push a version tag (e.g. 0.0.2 or v0.0.2) and this builds macOS + Linux +
+# Windows installers and publishes them to the GitHub Release for that tag.
+# The app version is taken FROM THE TAG, so package.json never has to be bumped
+# manually — tag and artifacts can't disagree.
 on:
   push:
     tags:
@@ -9,11 +11,12 @@ on:
       - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: write   # needed to create the GitHub Release
+  contents: write   # needed to create/publish the GitHub Release
 
 jobs:
   build:
     strategy:
+      fail-fast: false        # one platform failing shouldn't cancel the others
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -24,6 +27,15 @@ jobs:
         with:
           node-version: 20
 
+      # Derive the version from the tag (strip any leading "v") and write it
+      # into package.json so electron-builder uses exactly the tagged version.
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Releasing version: $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       # Linux: libsecret headers for keytar's native build.
       - name: Install Linux build deps
         if: matrix.os == 'ubuntu-latest'
@@ -32,7 +44,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # electron-builder publishes to the Release for the pushed tag.
+      # Publish to the Release matching this tag (creates it if missing,
+      # published — not draft — so users' auto-update can read latest*.yml).
       - name: Build & publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -31,7 +31,8 @@
       {
         "provider": "github",
         "owner": "hatimox",
-        "repo": "TimeAgent"
+        "repo": "TimeAgent",
+        "releaseType": "release"
       }
     ],
     "mac": {
