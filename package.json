@@ -10,7 +10,10 @@
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
   },
-  "author": "Hatim",
+  "author": {
+    "name": "Hatim Haffane",
+    "email": "hatim.haffane@gmail.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "electron": "^31.0.0",
