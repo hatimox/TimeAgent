@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+<title>TimeAgent Settings</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="settings">
+    <div id="welcome" class="welcome" style="display:none">
+      <b>Welcome to TimeAgent.</b> Enter your TargetProcess URL and API token, then click Save.
+    </div>
+
+    <fieldset>
+      <legend>TargetProcess</legend>
+      <div class="field"><label>Instance URL</label><input id="tpURL" type="text" placeholder="https://yourco.tpondemand.com"></div>
+      <div class="field"><label>API token</label><input id="tpToken" type="password" placeholder="access token"></div>
+      <div class="field"><label>Timezone</label><select id="timezone"></select></div>
+      <div id="whoami" class="whoami"></div>
+      <div class="hint">Token: TargetProcess → My Profile → Access Tokens. Your user is detected automatically.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Meeting auto-logging</legend>
+      <div class="field"><label>Daily task id</label><input id="dailyTaskId" class="short" type="number"></div>
+      <div class="field"><label>Meetings task id</label><input id="meetingsTaskId" class="short" type="number"></div>
+      <div class="field"><label>Min minutes</label><input id="meetingMinMinutes" class="short" type="number"></div>
+      <div class="field"><label>Step minutes</label><input id="meetingStepMinutes" class="short" type="number"></div>
+      <div class="hint" id="roundHint"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Recurring daily auto-logs</legend>
+      <div class="hint">Logged once per working day (Mon–Fri).</div>
+      <div id="recList"></div>
+      <button id="addRec" style="margin-top:8px">+ Add entry</button>
+    </fieldset>
+
+    <div class="row-actions">
+      <button id="save" class="primary">Save</button>
+      <span id="status" class="whoami"></span>
+    </div>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html>

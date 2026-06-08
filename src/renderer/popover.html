@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+<title>TimeAgent</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  body { background: var(--surface); padding: 12px; gap: 0; }
+  .pop-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .pop-head .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pop-head .dot.live { background: var(--bug); }
+  .pop-head h1 { font-size: 14px; font-weight: 700; margin: 0; flex: 1; }
+  .pop-head .meeting { font-size: 11px; color: var(--bug); font-weight: 600; }
+
+  .tiles { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tile { flex: 1; background: var(--surface-2); border-radius: 10px; padding: 10px 6px; text-align: center; }
+  .tile b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  .monthbox { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 10px; padding: 8px; margin-bottom: 12px; }
+  .monthbox .mid { flex: 1; text-align: center; }
+  .monthbox .mid b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .monthbox .mid span { font-size: 11px; color: var(--muted); }
+  .monthbox button { background: transparent; border: none; font-size: 18px; line-height: 1; padding: 4px 8px; color: var(--accent); }
+  .monthbox button:disabled { color: var(--muted); }
+  .monthbox button:hover:not(:disabled) { background: var(--accent-soft); }
+
+  .actions { display: flex; flex-direction: column; gap: 6px; }
+  .actions button { width: 100%; text-align: left; padding: 8px 10px; }
+  .actions .row2 { display: flex; gap: 6px; }
+  .actions .row2 button { flex: 1; text-align: center; }
+  .pop-status { font-size: 11px; color: var(--muted); margin-top: 8px; min-height: 14px; }
+</style>
+</head>
+<body>
+  <div class="pop-head">
+    <div id="dot" class="dot"></div>
+    <h1>TimeAgent</h1>
+    <span id="meeting" class="meeting" style="display:none">In meeting</span>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><b id="today">0.00h</b><span>Today</span></div>
+    <div class="tile"><b id="week">0.00h</b><span>Week</span></div>
+  </div>
+
+  <div class="monthbox">
+    <button id="prevMonth">‹</button>
+    <div class="mid"><b id="month">0.00h</b><span id="monthLabel">—</span></div>
+    <button id="nextMonth">›</button>
+  </div>
+
+  <div class="actions">
+    <button id="open">📋 Open tasks…</button>
+    <div class="row2">
+      <button id="settings">⚙ Settings</button>
+      <button id="refresh">↻ Refresh</button>
+    </div>
+    <button id="quit">Quit</button>
+  </div>
+  <div id="status" class="pop-status"></div>
+  <script src="popover.js"></script>
+</body>
+</html>

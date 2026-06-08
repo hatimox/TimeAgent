@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+<title>TimeAgent</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="toolbar">
+    <input id="search" type="text" placeholder="Search tasks & bugs (name or #id)…">
+    <label class="checkbox"><input id="activeOnly" type="checkbox" checked> Active only</label>
+    <select id="stateFilter"><option>All</option></select>
+    <select id="sprintFilter"><option>All</option></select>
+    <button id="refresh" class="icon" title="Refresh">↻</button>
+    <button id="settings" class="icon" title="Settings">⚙</button>
+    <span id="count" class="count"></span>
+  </div>
+
+  <div id="list" class="list"></div>
+
+  <div class="footer">
+    <span id="status" class="status"></span>
+    <div class="totals">
+      <div class="stat"><b id="today">0.00h</b><span>Today</span></div>
+      <div class="stat"><b id="week">0.00h</b><span>Week</span></div>
+      <div class="monthnav">
+        <button id="prevMonth" class="icon">‹</button>
+        <div class="stat"><b id="month">0.00h</b><span id="monthLabel">—</span></div>
+        <button id="nextMonth" class="icon">›</button>
+      </div>
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
