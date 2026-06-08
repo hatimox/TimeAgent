@@ -1,11 +1,12 @@
 name: Release
 
 # Build macOS + Linux + Windows installers and publish to GitHub Releases
-# whenever you push a version tag like v1.0.1.
+# whenever you push a version tag (e.g. v1.0.1 or 1.0.1).
 on:
   push:
     tags:
       - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write   # needed to create the GitHub Release
