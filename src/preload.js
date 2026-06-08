@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('api', {
   openMain: () => ipcRenderer.invoke('open-main-window'),
   quit: () => ipcRenderer.invoke('quit-app'),
   onTotalsUpdated: (cb) => ipcRenderer.on('totals-updated', cb),
+  onMeetingState: (cb) => ipcRenderer.on('meeting-state', (_e, active) => cb(active)),
 });

@@ -24,4 +24,8 @@ $('quit').addEventListener('click', () => window.api.quit());
 // Re-pull whenever the popover becomes visible or the main process pushes data.
 window.addEventListener('focus', refresh);
 window.api.onTotalsUpdated(() => refresh());
+window.api.onMeetingState((active) => {
+  $('dot').classList.toggle('live', active);
+  $('meeting').style.display = active ? 'inline' : 'none';
+});
 refresh();

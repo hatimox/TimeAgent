@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+<link rel="stylesheet" href="app.css">
+<style>
+  body { padding: 16px; gap: 0; }
+  h2 { font-size: 14px; margin: 0 0 4px; }
+  p { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  input { width: 100%; margin-bottom: 14px; }
+  .btns { display: flex; gap: 8px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+  <h2 id="title">Meeting</h2>
+  <p id="label"></p>
+  <input id="text" type="text" placeholder="description" autofocus>
+  <div class="btns">
+    <button id="skip">Skip</button>
+    <button id="save" class="primary">Save</button>
+  </div>
+  <script src="prompt.js"></script>
+</body>
+</html>

@@ -3,22 +3,76 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog } = require
 const path = require('path');
 const { TPClient } = require('./tpclient');
 const { SettingsStore } = require('./settings');
+const { ZoomWatcher } = require('./zoomwatcher');
 
-// Auto-update via GitHub Releases (no-op in dev / unpackaged).
+// Updates via GitHub Releases (no-op in dev / unpackaged).
+//   - Linux/Windows: silent auto-download + install on restart.
+//   - macOS: unsigned apps can't self-install, so we NOTIFY and open the
+//     Release page for a manual download instead.
 let autoUpdater = null;
 try { autoUpdater = require('electron-updater').autoUpdater; } catch (_) {}
 
+const RELEASES_URL = 'https://github.com/hatimox/TimeAgent/releases/latest';
+const isMac = process.platform === 'darwin';
+
 function setupAutoUpdate() {
   if (!autoUpdater || !app.isPackaged) return;   // only in built apps
-  autoUpdater.autoDownload = true;
-  autoUpdater.on('update-downloaded', () => {
-    // Install on next quit; or prompt to restart now.
-    if (tray) tray.setToolTip('TimeAgent — update ready (restart to apply)');
+
+  // On Mac we don't try to auto-install (unsigned) — just detect + notify.
+  autoUpdater.autoDownload = !isMac;
+
+  autoUpdater.on('update-available', (info) => {
+    if (isMac) notifyManualUpdate(info && info.version);
   });
-  autoUpdater.on('error', (e) => { /* silent; logged */ console.error('updater', e && e.message); });
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-  // Re-check every 6 hours while running.
-  setInterval(() => autoUpdater.checkForUpdatesAndNotify().catch(() => {}), 6 * 3600 * 1000);
+
+  autoUpdater.on('update-downloaded', () => {
+    // Linux/Windows: ready to install on restart.
+    if (tray) tray.setToolTip('TimeAgent — update ready (restart to apply)');
+    const r = dialog.showMessageBoxSync({
+      type: 'info', buttons: ['Restart now', 'Later'], defaultId: 0,
+      message: 'A TimeAgent update has been downloaded.',
+      detail: 'Restart to apply it.',
+    });
+    if (r === 0) { autoUpdater.quitAndInstall(); }
+  });
+
+  autoUpdater.on('error', (e) => { console.error('updater', e && e.message); });
+  autoUpdater.checkForUpdates().catch(() => {});
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 6 * 3600 * 1000);
+}
+
+// Triggered from the tray menu — gives explicit feedback either way.
+async function checkForUpdatesManual() {
+  if (!autoUpdater || !app.isPackaged) {
+    dialog.showMessageBox({ type: 'info', message: 'Updates are only checked in the installed app.',
+      detail: `Current version: ${app.getVersion()}` });
+    return;
+  }
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    const v = res && res.updateInfo && res.updateInfo.version;
+    if (!v || v === app.getVersion()) {
+      dialog.showMessageBox({ type: 'info', message: 'You’re up to date.',
+        detail: `Version ${app.getVersion()}` });
+    } else if (isMac) {
+      notifyManualUpdate(v);
+    }
+  } catch (e) {
+    dialog.showMessageBox({ type: 'warning', message: 'Could not check for updates.', detail: e.message });
+  }
+}
+
+let lastNotifiedVersion = '';
+function notifyManualUpdate(version) {
+  if (version && version === lastNotifiedVersion) return;  // don't nag repeatedly
+  lastNotifiedVersion = version;
+  if (tray) tray.setToolTip(`TimeAgent — v${version} available`);
+  const r = dialog.showMessageBoxSync({
+    type: 'info', buttons: ['Download', 'Later'], defaultId: 0,
+    message: `TimeAgent ${version ? 'v' + version : 'update'} is available`,
+    detail: 'Click Download to get the latest version, then install it over the current app.',
+  });
+  if (r === 0) require('electron').shell.openExternal(RELEASES_URL);
 }
 
 let tray = null;
@@ -26,6 +80,8 @@ let mainWindow = null;
 let settingsWindow = null;
 let store = null;
 let client = null;
+let zoomWatcher = null;
+let inMeeting = false;
 
 // Keep the app alive with no windows (tray app).
 app.on('window-all-closed', (e) => { /* don't quit */ });
@@ -34,6 +90,27 @@ function makeClient() {
   if (!store.isConfigured) { client = null; return; }
   const c = store.asConfig();
   client = new TPClient({ baseURL: c.baseURL, token: c.token, myUserId: c.myUserId });
+}
+
+function startZoomWatcher() {
+  if (zoomWatcher) zoomWatcher.stop();
+  zoomWatcher = new ZoomWatcher({
+    getConfig: () => ({ ...store.asConfig(), tzOffsetMinutes: tzOffset(store.data.timezone) }),
+    getClient: () => client,
+    dataDir: store.dir,
+    onMeetingState: (active) => {
+      if (active !== inMeeting) {
+        inMeeting = active;
+        setTrayIcon(active);   // swap the menu-bar icon
+        if (popover && popover.isVisible()) popover.webContents.send('meeting-state', active);
+      }
+    },
+    onStatus: (msg) => {
+      if (mainWindow) mainWindow.webContents.send('status', msg);
+      updateTotals();
+    },
+  });
+  zoomWatcher.start();
 }
 
 async function ensureUserId() {
@@ -75,14 +152,25 @@ let cachedTimes = [];      // all my time entries (for month re-slicing)
 let lastUpdated = '';      // HH:MM of last fetch
 let popover = null;        // the borderless popover window
 
-function buildTray() {
-  // Load the clock icon from disk. The "Template" filename + setTemplateImage
-  // makes macOS render it correctly (adapts to light/dark menu bar). Electron
-  // auto-loads the @2x variant for retina.
-  const iconPath = path.join(__dirname, 'assets', 'trayTemplate.png');
-  const img = nativeImage.createFromPath(iconPath);
+let iconNormal = null, iconMeeting = null;
+
+function loadIcon(file) {
+  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
   img.setTemplateImage(true);
-  tray = new Tray(img);
+  return img;
+}
+
+function setTrayIcon(meeting) {
+  if (!tray) return;
+  tray.setImage(meeting ? iconMeeting : iconNormal);
+  tray.setToolTip(meeting ? 'TimeAgent — in meeting' : 'TimeAgent');
+}
+
+function buildTray() {
+  // Template icons adapt to the light/dark menu bar; Electron auto-loads @2x.
+  iconNormal = loadIcon('trayTemplate.png');
+  iconMeeting = loadIcon('trayMeetingTemplate.png');
+  tray = new Tray(iconNormal);
   tray.setToolTip('TimeAgent');
   tray.on('click', (_e, bounds) => togglePopover(bounds));
   // Right-click still gives a minimal menu (quit etc).
@@ -90,7 +178,9 @@ function buildTray() {
     tray.popUpContextMenu(Menu.buildFromTemplate([
       { label: 'Open tasks…', click: createMainWindow },
       { label: 'Settings…', click: createSettingsWindow },
+      { label: 'Check for updates…', click: checkForUpdatesManual },
       { type: 'separator' },
+      { label: `Version ${app.getVersion()}`, enabled: false },
       { label: 'Quit', click: () => app.quit() },
     ]));
   });
@@ -247,6 +337,7 @@ app.whenReady().then(async () => {
   buildTray();
   if (!store.isConfigured) createSettingsWindow();
   else { createMainWindow(); updateTotals(); }
+  startZoomWatcher();   // begins polling for Zoom meetings
   // Keep tray totals fresh while running (every 5 min).
   setInterval(updateTotals, 5 * 60 * 1000);
   setupAutoUpdate();
