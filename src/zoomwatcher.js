@@ -154,6 +154,7 @@ function promptText(title, label) {
     const win = new BrowserWindow({
       width: 380, height: 200, resizable: false, minimizable: false, maximizable: false,
       title, alwaysOnTop: true,
+      icon: path.join(__dirname, 'assets', 'appicon.png'),
       webPreferences: { contextIsolation: true,
         preload: path.join(__dirname, 'promptPreload.js') },
     });

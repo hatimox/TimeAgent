@@ -24,9 +24,29 @@ $('quit').addEventListener('click', () => window.api.quit());
 // Re-pull whenever the popover becomes visible or the main process pushes data.
 window.addEventListener('focus', refresh);
 window.api.onTotalsUpdated(() => refresh());
-window.api.onMeetingState((active) => {
+let meetingStart = 0, meetingTick = null;
+function setMeeting(active, startedAt) {
   $('dot').classList.toggle('live', active);
-  $('meeting').style.display = active ? 'inline' : 'none';
-});
+  if (active) {
+    meetingStart = startedAt || Date.now();
+    tickMeeting();
+    if (!meetingTick) meetingTick = setInterval(tickMeeting, 1000);
+  } else {
+    $('meeting').style.display = 'none';
+    if (meetingTick) { clearInterval(meetingTick); meetingTick = null; }
+  }
+}
+function tickMeeting() {
+  const s = Math.floor((Date.now() - meetingStart) / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  const t = h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`
+                  : `${m}:${String(ss).padStart(2,'0')}`;
+  $('meeting').textContent = `In meeting · ${t}`;
+  $('meeting').style.display = 'inline';
+}
+
+window.api.onMeetingState((active, startedAt) => setMeeting(active, startedAt));
+// On open, sync the current meeting state (so it shows mid-meeting).
+window.api.getMeetingState().then((m) => { if (m.active) setMeeting(true, m.startedAt); });
 window.api.getVersion().then((v) => { $('version').textContent = `TimeAgent v${v}`; });
 refresh();

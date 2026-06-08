@@ -75,6 +75,8 @@ function notifyManualUpdate(version) {
   if (r === 0) require('electron').shell.openExternal(RELEASES_URL);
 }
 
+const APP_ICON = path.join(__dirname, 'assets', 'appicon.png');
+
 let tray = null;
 let mainWindow = null;
 let settingsWindow = null;
@@ -101,8 +103,11 @@ function startZoomWatcher() {
     onMeetingState: (active) => {
       if (active !== inMeeting) {
         inMeeting = active;
-        setTrayIcon(active);   // swap the menu-bar icon
-        if (popover && popover.isVisible()) popover.webContents.send('meeting-state', active);
+        setTrayIcon(active);   // swap the menu-bar icon + start/stop the timer
+        if (popover && popover.isVisible()) {
+          popover.webContents.send('meeting-state', active,
+            active && meetingStartedAt ? meetingStartedAt.getTime() : 0);
+        }
       }
     },
     onStatus: (msg) => {
@@ -129,7 +134,7 @@ async function ensureUserId() {
 function createMainWindow() {
   if (mainWindow) { mainWindow.show(); mainWindow.focus(); return; }
   mainWindow = new BrowserWindow({
-    width: 760, height: 560, show: false, title: 'TimeAgent',
+    width: 760, height: 560, show: false, title: 'TimeAgent', icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -140,7 +145,7 @@ function createMainWindow() {
 function createSettingsWindow() {
   if (settingsWindow) { settingsWindow.show(); settingsWindow.focus(); return; }
   settingsWindow = new BrowserWindow({
-    width: 480, height: 600, show: false, title: 'TimeAgent Settings',
+    width: 480, height: 600, show: false, title: 'TimeAgent Settings', icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   settingsWindow.loadFile(path.join(__dirname, 'renderer', 'settings.html'));
@@ -153,23 +158,49 @@ let lastUpdated = '';      // HH:MM of last fetch
 let popover = null;        // the borderless popover window
 
 let iconNormal = null, iconMeeting = null;
+let meetingStartedAt = null;     // Date when the current meeting began
+let meetingTickTimer = null;
 
-function loadIcon(file) {
+function loadIcon(file, template) {
   const img = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
-  img.setTemplateImage(true);
+  img.setTemplateImage(!!template);   // template = monochrome; non-template keeps color
   return img;
+}
+
+function mmss(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+              : `${m}:${String(ss).padStart(2, '0')}`;
 }
 
 function setTrayIcon(meeting) {
   if (!tray) return;
-  tray.setImage(meeting ? iconMeeting : iconNormal);
-  tray.setToolTip(meeting ? 'TimeAgent — in meeting' : 'TimeAgent');
+  if (meeting) {
+    tray.setImage(iconMeeting);            // RED, non-template
+    meetingStartedAt = meetingStartedAt || new Date();
+    updateMeetingTitle();
+    if (!meetingTickTimer) meetingTickTimer = setInterval(updateMeetingTitle, 1000);
+  } else {
+    tray.setImage(iconNormal);             // black template
+    tray.setTitle('');                     // clear the elapsed text
+    tray.setToolTip('TimeAgent');
+    meetingStartedAt = null;
+    if (meetingTickTimer) { clearInterval(meetingTickTimer); meetingTickTimer = null; }
+  }
+}
+
+// Show the live meeting duration as the tray title (text beside the icon).
+function updateMeetingTitle() {
+  if (!tray || !meetingStartedAt) return;
+  const elapsed = mmss(Date.now() - meetingStartedAt.getTime());
+  tray.setTitle(` ${elapsed}`);
+  tray.setToolTip(`TimeAgent — in meeting (${elapsed})`);
 }
 
 function buildTray() {
-  // Template icons adapt to the light/dark menu bar; Electron auto-loads @2x.
-  iconNormal = loadIcon('trayTemplate.png');
-  iconMeeting = loadIcon('trayMeetingTemplate.png');
+  iconNormal = loadIcon('trayTemplate.png', true);        // template (adapts light/dark)
+  iconMeeting = loadIcon('trayMeetingRed.png', false);    // red, full color
   tray = new Tray(iconNormal);
   tray.setToolTip('TimeAgent');
   tray.on('click', (_e, bounds) => togglePopover(bounds));
@@ -189,7 +220,7 @@ function buildTray() {
 function createPopover() {
   popover = new BrowserWindow({
     width: 280, height: 320, show: false, frame: false, resizable: false,
-    transparent: false, skipTaskbar: true, alwaysOnTop: true,
+    transparent: false, skipTaskbar: true, alwaysOnTop: true, icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   popover.loadFile(path.join(__dirname, 'renderer', 'popover.html'));
@@ -306,6 +337,9 @@ ipcMain.handle('force-refresh', async () => { await updateTotals(); return { ok:
 ipcMain.handle('open-main-window', () => { if (popover) popover.hide(); createMainWindow(); });
 ipcMain.handle('quit-app', () => app.quit());
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('get-meeting-state', () => ({
+  active: inMeeting, startedAt: meetingStartedAt ? meetingStartedAt.getTime() : 0,
+}));
 
 // ---- helpers ----
 function dominantProcessId(items) {
@@ -331,7 +365,10 @@ function tzOffset(tz) {
 
 // ---- startup ----
 app.whenReady().then(async () => {
-  if (process.platform === 'darwin' && app.dock) app.dock.hide(); // menu-bar style
+  if (process.platform === 'darwin' && app.dock) {
+    try { app.dock.setIcon(APP_ICON); } catch (_) {}   // for Cmd-Tab / transient dock
+    app.dock.hide(); // menu-bar style
+  }
   store = new SettingsStore(app);
   await store.load();
   makeClient();
