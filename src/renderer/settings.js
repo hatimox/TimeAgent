@@ -38,6 +38,7 @@ async function init() {
   recurring = Array.isArray(s.recurring) ? s.recurring.slice() : [];
   if (s.myUserId) $('whoami').textContent = `Signed in (user id ${s.myUserId})`;
   renderRecurring(); roundExample();
+  window.api.getVersion().then((v) => { $('version').textContent = `TimeAgent v${v}`; });
 }
 
 $('recList').addEventListener('click', (e) => {

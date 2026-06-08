@@ -28,4 +28,5 @@ window.api.onMeetingState((active) => {
   $('dot').classList.toggle('live', active);
   $('meeting').style.display = active ? 'inline' : 'none';
 });
+window.api.getVersion().then((v) => { $('version').textContent = `TimeAgent v${v}`; });
 refresh();

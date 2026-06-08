@@ -305,6 +305,7 @@ ipcMain.handle('get-totals', (_e, monthOffset) => {
 ipcMain.handle('force-refresh', async () => { await updateTotals(); return { ok: true }; });
 ipcMain.handle('open-main-window', () => { if (popover) popover.hide(); createMainWindow(); });
 ipcMain.handle('quit-app', () => app.quit());
+ipcMain.handle('get-version', () => app.getVersion());
 
 // ---- helpers ----
 function dominantProcessId(items) {
