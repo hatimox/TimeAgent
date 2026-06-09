@@ -18,4 +18,5 @@ contextBridge.exposeInMainWorld('api', {
   onMeetingState: (cb) => ipcRenderer.on('meeting-state', (_e, active, startedAt) => cb(active, startedAt)),
   getVersion: () => ipcRenderer.invoke('get-version'),
   getMeetingState: () => ipcRenderer.invoke('get-meeting-state'),
+  getMoroccoHolidays: (year) => ipcRenderer.invoke('get-morocco-holidays', year),
 });

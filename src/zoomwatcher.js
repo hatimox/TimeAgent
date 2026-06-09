@@ -11,10 +11,14 @@ const fs = require('fs');
 const path = require('path');
 const { dialog, BrowserWindow } = require('electron');
 
+// Processes that exist ONLY during an active meeting (not while the Zoom app is
+// merely open). 'Zoom'/'Zoom.exe' is the main app — it must NOT be here, or the
+// watcher thinks you're in a meeting the whole time Zoom is running.
+// These can be overridden per-user via settings.meetingProcs.
 const PROCS = {
   darwin: ['CptHost', 'aomhost'],
-  linux: ['zoom'],          // TODO: verify the real in-meeting process on Linux
-  win32: ['Zoom', 'CptHost'], // TODO: verify on Windows
+  linux: ['aomhost', 'CptHost'],   // verify on Linux; override in settings if needed
+  win32: ['CptHost', 'aomhost'],   // CptHost.exe = in-meeting host; verify per Zoom version
 };
 
 class ZoomWatcher {
@@ -24,7 +28,10 @@ class ZoomWatcher {
     this.dataDir = dataDir;
     this.onMeetingState = onMeetingState || (() => {});
     this.onStatus = onStatus || (() => {});
-    this.procs = PROCS[process.platform] || ['CptHost'];
+    // Allow a user override (settings.meetingProcs: comma/space separated names).
+    const cfg = (this.getConfig && this.getConfig()) || {};
+    const override = (cfg.meetingProcs || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
+    this.procs = override.length ? override : (PROCS[process.platform] || ['CptHost']);
     this.minSeconds = 60;
     this.idlePollMs = 8000;     // when NOT in a meeting
     this.activePollMs = 3000;   // when in a meeting (catch the end fast)

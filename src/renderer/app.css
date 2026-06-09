@@ -129,6 +129,18 @@ button.icon { padding: 5px 8px; }
 /* Settings */
 .settings { padding: 18px; overflow: auto; }
 .welcome { background: var(--accent-soft); color: var(--text); border: 1px solid var(--accent); padding: 12px 14px; border-radius: var(--radius); margin-bottom: 16px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: 8px 14px; color: var(--muted); font-weight: 600;
+  margin-bottom: -1px;
+}
+.tab:hover { background: var(--surface-2); color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); background: transparent; }
+.tabpane { display: none; }
+.tabpane.active { display: block; }
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 14px; padding: 12px 14px; background: var(--surface); }
 legend { font-weight: 700; padding: 0 6px; color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
 .field { display: flex; align-items: center; gap: 10px; margin: 8px 0; }

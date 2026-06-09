@@ -12,30 +12,80 @@
       <b>Welcome to TimeAgent.</b> Enter your TargetProcess URL and API token, then click Save.
     </div>
 
-    <fieldset>
-      <legend>TargetProcess</legend>
-      <div class="field"><label>Instance URL</label><input id="tpURL" type="text" placeholder="https://yourco.tpondemand.com"></div>
-      <div class="field"><label>API token</label><input id="tpToken" type="password" placeholder="access token"></div>
-      <div class="field"><label>Timezone</label><select id="timezone"></select></div>
-      <div id="whoami" class="whoami"></div>
-      <div class="hint">Token: TargetProcess → My Profile → Access Tokens. Your user is detected automatically.</div>
-    </fieldset>
+    <div class="tabs">
+      <button class="tab active" data-tab="account">Account</button>
+      <button class="tab" data-tab="meetings">Meetings</button>
+      <button class="tab" data-tab="recurring">Recurring</button>
+      <button class="tab" data-tab="daysoff">Days off</button>
+    </div>
 
-    <fieldset>
-      <legend>Meeting auto-logging</legend>
-      <div class="field"><label>Daily task id</label><input id="dailyTaskId" class="short" type="number"></div>
-      <div class="field"><label>Meetings task id</label><input id="meetingsTaskId" class="short" type="number"></div>
-      <div class="field"><label>Min minutes</label><input id="meetingMinMinutes" class="short" type="number"></div>
-      <div class="field"><label>Step minutes</label><input id="meetingStepMinutes" class="short" type="number"></div>
-      <div class="hint" id="roundHint"></div>
-    </fieldset>
+    <!-- Account / TargetProcess -->
+    <section class="tabpane active" data-pane="account">
+      <fieldset>
+        <legend>TargetProcess</legend>
+        <div class="field"><label>Instance URL</label><input id="tpURL" type="text" placeholder="https://yourco.tpondemand.com"></div>
+        <div class="field"><label>API token</label><input id="tpToken" type="password" placeholder="access token"></div>
+        <div class="field"><label>Timezone</label><select id="timezone"></select></div>
+        <div id="whoami" class="whoami"></div>
+        <div class="hint">Token: TargetProcess → My Profile → Access Tokens. Your user is detected automatically.</div>
+      </fieldset>
+    </section>
 
-    <fieldset>
-      <legend>Recurring daily auto-logs</legend>
-      <div class="hint">Logged once per working day (Mon–Fri).</div>
-      <div id="recList"></div>
-      <button id="addRec" style="margin-top:8px">+ Add entry</button>
-    </fieldset>
+    <!-- Meetings -->
+    <section class="tabpane" data-pane="meetings">
+      <fieldset>
+        <legend>Meeting auto-logging</legend>
+        <div class="field"><label>Daily task id</label><input id="dailyTaskId" class="short" type="number"></div>
+        <div class="field"><label>Meetings task id</label><input id="meetingsTaskId" class="short" type="number"></div>
+        <div class="field"><label>Min minutes</label><input id="meetingMinMinutes" class="short" type="number"></div>
+        <div class="field"><label>Step minutes</label><input id="meetingStepMinutes" class="short" type="number"></div>
+        <div class="hint" id="roundHint"></div>
+        <div class="field"><label>Meeting processes</label><input id="meetingProcs" type="text" placeholder="auto (CptHost, aomhost)"></div>
+        <div class="hint">Advanced: process names that run only during a Zoom meeting. Leave blank for defaults. If the end-of-meeting popup only appears when you fully quit Zoom, set the correct in-meeting process name here.</div>
+      </fieldset>
+    </section>
+
+    <!-- Recurring -->
+    <section class="tabpane" data-pane="recurring">
+      <fieldset>
+        <legend>Recurring daily auto-logs</legend>
+        <div class="hint">Logged once per working day (skips weekly days off + days off).</div>
+        <div id="recList"></div>
+        <button id="addRec" style="margin-top:8px">+ Add entry</button>
+      </fieldset>
+    </section>
+
+    <!-- Days off -->
+    <section class="tabpane" data-pane="daysoff">
+      <fieldset>
+        <legend>Days off</legend>
+        <div class="hint">No recurring auto-logs run on these days.</div>
+        <div class="field" style="flex-wrap:wrap">
+          <label>Weekly</label>
+          <span id="weekly"></span>
+        </div>
+        <div class="field">
+          <label>Holidays region</label>
+          <select id="region">
+            <option value="none">None</option>
+            <option value="morocco">Morocco</option>
+          </select>
+        </div>
+        <div id="moroccoBox" style="display:none">
+          <div class="field"><label>Year</label><select id="holYear"></select></div>
+          <div class="hint" style="margin-top:8px"><b>Fixed civil holidays</b> — applied automatically every year.</div>
+          <div id="fixedList"></div>
+          <div class="hint" style="margin-top:10px"><b>Religious holidays</b> — shift yearly; confirm/adjust (moon-sighting dependent).</div>
+          <div id="religiousList"></div>
+        </div>
+        <div class="field" style="margin-top:8px">
+          <label>Add a day off</label>
+          <input id="dayOffPicker" type="date">
+          <button id="addDayOff">Add</button>
+        </div>
+        <div id="daysOffList"></div>
+      </fieldset>
+    </section>
 
     <div class="row-actions">
       <button id="save" class="primary">Save</button>

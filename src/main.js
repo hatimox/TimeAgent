@@ -4,6 +4,19 @@ const path = require('path');
 const { TPClient } = require('./tpclient');
 const { SettingsStore } = require('./settings');
 const { ZoomWatcher } = require('./zoomwatcher');
+const holidays = require('./holidays');
+
+// Combined set of days off for a year: user-added + confirmed religious +
+// (when region is Morocco) the fixed civil holidays.
+function allDaysOff(year) {
+  const out = new Set(store.data.daysOff || []);
+  // Enabled religious holiday dates (slot-keyed; user edits persist).
+  for (const s of store.data.religiousSlots || []) if (s.on && s.date) out.add(s.date);
+  if (store.data.region === 'morocco') {
+    for (const d of holidays.fixedHolidays(year)) out.add(d);
+  }
+  return out;
+}
 
 // Updates via GitHub Releases (no-op in dev / unpackaged).
 //   - Linux/Windows: silent auto-download + install on restart.
@@ -22,7 +35,7 @@ function setupAutoUpdate() {
   autoUpdater.autoDownload = !isMac;
 
   autoUpdater.on('update-available', (info) => {
-    if (isMac) notifyManualUpdate(info && info.version);
+    if (isMac) notifyManualUpdate(info);
   });
 
   autoUpdater.on('update-downloaded', () => {
@@ -50,12 +63,13 @@ async function checkForUpdatesManual() {
   }
   try {
     const res = await autoUpdater.checkForUpdates();
-    const v = res && res.updateInfo && res.updateInfo.version;
+    const info = res && res.updateInfo;
+    const v = info && info.version;
     if (!v || v === app.getVersion()) {
       dialog.showMessageBox({ type: 'info', message: 'You’re up to date.',
         detail: `Version ${app.getVersion()}` });
     } else if (isMac) {
-      notifyManualUpdate(v);
+      notifyManualUpdate(info);
     }
   } catch (e) {
     dialog.showMessageBox({ type: 'warning', message: 'Could not check for updates.', detail: e.message });
@@ -63,16 +77,106 @@ async function checkForUpdatesManual() {
 }
 
 let lastNotifiedVersion = '';
-function notifyManualUpdate(version) {
-  if (version && version === lastNotifiedVersion) return;  // don't nag repeatedly
+let updateDownloading = false;
+
+// Smooth Mac flow: detect → offer → download the .dmg IN-APP with progress →
+// open it so the user just drags the app to Applications. No hunting on GitHub.
+async function notifyManualUpdate(info) {
+  const version = info && info.version;
+  if (version && version === lastNotifiedVersion && !updateDownloading) {
+    // already offered this version this session
+  }
   lastNotifiedVersion = version;
   if (tray) tray.setToolTip(`TimeAgent — v${version} available`);
+
+  const notes = (info && typeof info.releaseNotes === 'string')
+    ? info.releaseNotes.replace(/<[^>]+>/g, '').trim().slice(0, 400) : '';
+
   const r = dialog.showMessageBoxSync({
-    type: 'info', buttons: ['Download', 'Later'], defaultId: 0,
+    type: 'info', buttons: ['Download & Install', 'Later'], defaultId: 0, cancelId: 1,
     message: `TimeAgent ${version ? 'v' + version : 'update'} is available`,
-    detail: 'Click Download to get the latest version, then install it over the current app.',
+    detail: (notes ? notes + '\n\n' : '') +
+      'TimeAgent will download the update and open the installer — just drag it to Applications.',
   });
-  if (r === 0) require('electron').shell.openExternal(RELEASES_URL);
+  if (r !== 0) return;
+  await downloadAndOpenDmg(info);
+}
+
+// Find the arm64/x64 .dmg URL for this Mac from the update info, download it with
+// a progress dialog, then open it.
+async function downloadAndOpenDmg(info) {
+  if (updateDownloading) return;
+  updateDownloading = true;
+  try {
+    const isArm = process.arch === 'arm64';
+    // Prefer a .dmg listed in the update info that matches this arch.
+    const files = (info && info.files) || [];
+    let dmg = files.find((f) => /\.dmg$/i.test(f.url) &&
+      (isArm ? /arm64/i.test(f.url) : !/arm64/i.test(f.url)));
+    if (!dmg) dmg = files.find((f) => /\.dmg$/i.test(f.url));   // any dmg
+    // Fallback to electron-builder's default dmg name (x64 has NO arch suffix).
+    const fileName = dmg ? decodeURIComponent(dmg.url.split('/').pop())
+      : (isArm ? `TimeAgent-${info.version}-arm64.dmg` : `TimeAgent-${info.version}.dmg`);
+    const base = `https://github.com/hatimox/TimeAgent/releases/download/${info.version}/`;
+    const url = dmg && /^https?:/.test(dmg.url) ? dmg.url : base + encodeURIComponent(fileName);
+
+    const dest = path.join(app.getPath('temp'), fileName);
+    if (tray) tray.setToolTip(`Downloading TimeAgent v${info.version}…`);
+
+    await downloadFile(url, dest, (pct) => {
+      if (tray) tray.setToolTip(`Downloading update… ${pct}%`);
+    });
+
+    if (tray) tray.setToolTip(`TimeAgent — update downloaded`);
+    const r = dialog.showMessageBoxSync({
+      type: 'info', buttons: ['Open installer', 'Show in Finder'], defaultId: 0,
+      message: 'Update downloaded',
+      detail: 'The installer will open — drag TimeAgent onto the Applications folder, ' +
+              'replacing the old version. Then reopen TimeAgent.',
+    });
+    if (r === 0) await require('electron').shell.openPath(dest);
+    else require('electron').shell.showItemInFolder(dest);
+  } catch (e) {
+    const r = dialog.showMessageBoxSync({
+      type: 'warning', buttons: ['Open releases page', 'Cancel'], defaultId: 0,
+      message: 'Could not download the update automatically.',
+      detail: e.message + '\n\nYou can download it from the releases page instead.',
+    });
+    if (r === 0) require('electron').shell.openExternal(RELEASES_URL);
+  } finally {
+    updateDownloading = false;
+  }
+}
+
+// Stream a URL to a file, following redirects, reporting integer percent.
+function downloadFile(url, dest, onProgress) {
+  const https = require('https');
+  const fs = require('fs');
+  return new Promise((resolve, reject) => {
+    const get = (u, redirects = 0) => {
+      if (redirects > 5) return reject(new Error('Too many redirects'));
+      https.get(u, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume(); return get(res.headers.location, redirects + 1);
+        }
+        if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let done = 0, lastPct = -1;
+        const out = fs.createWriteStream(dest);
+        res.on('data', (chunk) => {
+          done += chunk.length;
+          if (total) {
+            const pct = Math.floor((done / total) * 100);
+            if (pct !== lastPct) { lastPct = pct; onProgress && onProgress(pct); }
+          }
+        });
+        res.pipe(out);
+        out.on('finish', () => out.close(() => resolve(dest)));
+        out.on('error', reject);
+      }).on('error', reject);
+    };
+    get(url);
+  });
 }
 
 const APP_ICON = path.join(__dirname, 'assets', 'appicon.png');
@@ -231,15 +335,36 @@ function createPopover() {
 function togglePopover(bounds) {
   if (!popover) createPopover();
   if (popover.isVisible()) { popover.hide(); return; }
-  // Position centered under the tray icon (fallback: top-right).
+
   const { screen } = require('electron');
-  const winBounds = popover.getBounds();
-  let x = Math.round((bounds && bounds.x || 0) + (bounds && bounds.width || 0) / 2 - winBounds.width / 2);
-  let y = Math.round((bounds && bounds.y || 0) + (bounds && bounds.height || 0) + 4);
-  if (!bounds || !bounds.width) { // Linux/Win sometimes give empty bounds
-    const wa = screen.getPrimaryDisplay().workArea;
-    x = wa.x + wa.width - winBounds.width - 8; y = wa.y + 8;
+  const win = popover.getBounds();
+  const hasBounds = bounds && bounds.width;
+  // Pick the display the tray icon (or cursor) is on.
+  const point = hasBounds
+    ? { x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) }
+    : screen.getCursorScreenPoint();
+  const wa = screen.getDisplayNearestPoint(point).workArea;
+
+  let x, y;
+  if (hasBounds) {
+    // Center horizontally under/over the icon.
+    x = Math.round(bounds.x + bounds.width / 2 - win.width / 2);
+    // If the tray is in the TOP half of the screen (macOS menu bar / top taskbar)
+    // drop the popover below the icon; if in the BOTTOM half (Windows taskbar)
+    // place it ABOVE the icon so it stays on-screen.
+    const trayInTopHalf = bounds.y < wa.y + wa.height / 2;
+    y = trayInTopHalf ? Math.round(bounds.y + bounds.height + 4)
+                      : Math.round(bounds.y - win.height - 4);
+  } else {
+    // No bounds (some Linux): anchor to the corner nearest the cursor.
+    x = wa.x + wa.width - win.width - 8;
+    y = (point.y < wa.y + wa.height / 2) ? wa.y + 8 : wa.y + wa.height - win.height - 8;
   }
+
+  // Clamp fully inside the work area so it's never clipped off-screen.
+  x = Math.max(wa.x + 4, Math.min(x, wa.x + wa.width - win.width - 4));
+  y = Math.max(wa.y + 4, Math.min(y, wa.y + wa.height - win.height - 4));
+
   popover.setPosition(x, y, false);
   popover.show();
   popover.focus();
@@ -293,6 +418,8 @@ ipcMain.handle('save-settings', async (_e, incoming) => {
   await store.save();
   makeClient();
   await ensureUserId();
+  startZoomWatcher();   // restart so meeting-process / rounding changes take effect
+  logRecurringIfDue();  // a newly added recurring entry fires now if due today
   return { ok: true, isConfigured: store.isConfigured };
 });
 
@@ -337,6 +464,12 @@ ipcMain.handle('force-refresh', async () => { await updateTotals(); return { ok:
 ipcMain.handle('open-main-window', () => { if (popover) popover.hide(); createMainWindow(); });
 ipcMain.handle('quit-app', () => app.quit());
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('get-morocco-holidays', (_e, year) => ({
+  fixed: holidays.fixedHolidays(year),
+  fixedNamed: holidays.fixedHolidaysNamed(year),
+  religious: holidays.religiousHolidays(year),
+  years: holidays.religiousYears(),
+}));
 ipcMain.handle('get-meeting-state', () => ({
   active: inMeeting, startedAt: meetingStartedAt ? meetingStartedAt.getTime() : 0,
 }));
@@ -364,6 +497,59 @@ function tzOffset(tz) {
 }
 
 // ---- startup ----
+// Log every configured recurring entry once per working day (Mon–Fri, skipping
+// days_off.json). Deduped via recurring_logged.json keyed by "date|taskId" so it
+// never double-logs across restarts. Mirrors the Swift app's behavior.
+async function logRecurringIfDue() {
+  const fs = require('fs');
+  if (!client) return;
+  const recurring = store.data.recurring || [];
+  if (!recurring.length) return;
+
+  const tz = store.data.timezone || 'UTC';
+  const off = tzOffset(tz);
+  const now = new Date();
+  // "today" and weekday in the work timezone.
+  const local = new Date(now.getTime() + off * 60000);
+  const today = local.toISOString().slice(0, 10);
+  const weekday = local.getUTCDay();        // 0=Sun … 6=Sat
+
+  // Weekly days off (configurable; default Sat+Sun).
+  const weeklyOff = store.data.weeklyOff || [0, 6];
+  if (weeklyOff.includes(weekday)) return;
+
+  // All days off = user-added + religious + (if region=morocco) fixed civil.
+  if (allDaysOff(local.getUTCFullYear()).has(today)) return;
+
+  const ledgerFile = path.join(store.dir, 'recurring_logged.json');
+  let logged = [];
+  try { logged = JSON.parse(fs.readFileSync(ledgerFile, 'utf8')); } catch (_) {}
+  const set = new Set(logged);
+
+  let anyLogged = false;
+  for (const entry of recurring) {
+    if (!entry.taskId || !(entry.hours > 0)) continue;
+    const key = `${today}|${entry.taskId}`;
+    if (set.has(key)) continue;
+
+    try {
+      await client.logTime({
+        entityId: entry.taskId, hours: entry.hours,
+        description: entry.label || '', date: now, tzOffsetMinutes: off,
+      });
+      set.add(key);
+      fs.writeFileSync(ledgerFile, JSON.stringify([...set]));
+      anyLogged = true;
+      if (mainWindow) mainWindow.webContents.send('status',
+        `Auto-logged ${entry.hours}h “${entry.label || entry.taskId}”`);
+    } catch (e) {
+      if (mainWindow) mainWindow.webContents.send('status',
+        `Recurring log failed: ${e.message}`);
+    }
+  }
+  if (anyLogged) updateTotals();
+}
+
 app.whenReady().then(async () => {
   if (process.platform === 'darwin' && app.dock) {
     try { app.dock.setIcon(APP_ICON); } catch (_) {}   // for Cmd-Tab / transient dock
@@ -376,8 +562,12 @@ app.whenReady().then(async () => {
   if (!store.isConfigured) createSettingsWindow();
   else { createMainWindow(); updateTotals(); }
   startZoomWatcher();   // begins polling for Zoom meetings
+  await ensureUserId();
+  logRecurringIfDue();  // fire today's recurring auto-logs once
   // Keep tray totals fresh while running (every 5 min).
   setInterval(updateTotals, 5 * 60 * 1000);
+  // Re-check recurring hourly too, in case the app launched before midnight / on a day off.
+  setInterval(logRecurringIfDue, 60 * 60 * 1000);
   setupAutoUpdate();
 });
 

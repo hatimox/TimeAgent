@@ -29,7 +29,14 @@ const DEFAULTS = () => ({
   meetingsTaskId: 0,
   meetingMinMinutes: 30,
   meetingStepMinutes: 15,
+  meetingProcs: '',   // optional override of the in-meeting process names
   recurring: [],
+  daysOff: [],            // user-added specific YYYY-MM-DD dates (no auto-logging)
+  weeklyOff: [0, 6],      // weekdays always off (0=Sun … 6=Sat); default Sat+Sun
+  region: 'none',         // 'morocco' = auto-apply fixed civil holidays
+  // Religious holidays as slot-keyed objects so user edits persist across reloads:
+  //   { key: "2026|Eid al-Adha|0", date: "2026-05-28", on: true }
+  religiousSlots: [],
   // token is NOT stored here; it lives in keytar (or token.secret fallback)
 });
 
@@ -111,7 +118,14 @@ class SettingsStore {
       meetingsTaskId: this.data.meetingsTaskId,
       meetingMinMinutes: this.data.meetingMinMinutes,
       meetingStepMinutes: this.data.meetingStepMinutes,
+      meetingProcs: this.data.meetingProcs,
       recurring: this.data.recurring,
+      daysOff: this.data.daysOff,
+      weeklyOff: this.data.weeklyOff,
+      region: this.data.region,
+      religiousSlots: this.data.religiousSlots,
+      // Flat list of enabled religious dates, for the day-off check in main.
+      religiousDays: (this.data.religiousSlots || []).filter((s) => s.on).map((s) => s.date),
     };
   }
 }
