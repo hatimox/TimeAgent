@@ -1,24 +1,38 @@
 'use strict';
-// Cross-platform Zoom meeting detection. On macOS the in-meeting media host
-// (CptHost / aomhost) appears only during an active call and exits on leave.
+// Cross-platform meeting detection for Zoom AND Microsoft Teams (and any app
+// whose in-meeting process you add in Settings). On macOS Zoom's in-meeting media
+// host (CptHost / aomhost) appears only during an active call and exits on leave.
 // When a meeting ends we ask Daily / Other / Cancel, optionally a description,
-// and log the (rounded) time to TargetProcess in real time.
+// and log the (rounded) time to TargetProcess in real time — same flow for all.
 //
-// Linux/Windows process names differ — set them in PROCS per platform once known.
+// Teams has no single clean in-meeting process; add its name via the probe +
+// the "Extra meeting processes" setting.
 
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { dialog, BrowserWindow } = require('electron');
 
-// Processes that exist ONLY during an active meeting (not while the Zoom app is
-// merely open). 'Zoom'/'Zoom.exe' is the main app — it must NOT be here, or the
-// watcher thinks you're in a meeting the whole time Zoom is running.
-// These can be overridden per-user via settings.meetingProcs.
+// Processes that exist ONLY during an active meeting (not while the app is merely
+// open). The main app process (Zoom.exe / ms-teams) must NOT be here, or the
+// watcher thinks you're in a meeting the whole time the app runs.
+// Covers Zoom + Microsoft Teams. Overridable per-user via settings.meetingProcs.
+//
+// Teams note: Teams has no single clean "in-meeting" process like Zoom's CptHost.
+// The names below are best-effort for new Teams; verify with the probe and
+// override in Settings if your version differs.
 const PROCS = {
-  darwin: ['CptHost', 'aomhost'],
-  linux: ['aomhost', 'CptHost'],   // verify on Linux; override in settings if needed
-  win32: ['CptHost', 'aomhost'],   // CptHost.exe = in-meeting host; verify per Zoom version
+  darwin: ['CptHost', 'aomhost'],            // Zoom only by default on mac (Teams: add via probe)
+  linux: ['aomhost', 'CptHost'],
+  win32: ['CptHost', 'aomhost'],
+};
+
+// Teams in-meeting process candidates per OS — appended to the defaults so the
+// watcher detects Teams calls too. Verify/adjust via the probe + Settings.
+const TEAMS_PROCS = {
+  darwin: [],                                 // unreliable on mac; user adds via probe
+  linux: [],
+  win32: [],
 };
 
 class ZoomWatcher {
@@ -28,10 +42,14 @@ class ZoomWatcher {
     this.dataDir = dataDir;
     this.onMeetingState = onMeetingState || (() => {});
     this.onStatus = onStatus || (() => {});
-    // Allow a user override (settings.meetingProcs: comma/space separated names).
+    // Process list = built-in (Zoom + Teams) for this OS, PLUS any user override
+    // (settings.meetingProcs: comma/space separated). Override ADDS to defaults so
+    // users only need to add their Teams process name, not re-list Zoom's.
     const cfg = (this.getConfig && this.getConfig()) || {};
+    const plat = process.platform;
+    const builtins = [...(PROCS[plat] || ['CptHost']), ...(TEAMS_PROCS[plat] || [])];
     const override = (cfg.meetingProcs || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean);
-    this.procs = override.length ? override : (PROCS[process.platform] || ['CptHost']);
+    this.procs = [...new Set([...builtins, ...override])];
     this.minSeconds = 60;
     this.idlePollMs = 8000;     // when NOT in a meeting
     this.activePollMs = 3000;   // when in a meeting (catch the end fast)

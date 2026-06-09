@@ -40,8 +40,8 @@
         <div class="field"><label>Min minutes</label><input id="meetingMinMinutes" class="short" type="number"></div>
         <div class="field"><label>Step minutes</label><input id="meetingStepMinutes" class="short" type="number"></div>
         <div class="hint" id="roundHint"></div>
-        <div class="field"><label>Meeting processes</label><input id="meetingProcs" type="text" placeholder="auto (CptHost, aomhost)"></div>
-        <div class="hint">Advanced: process names that run only during a Zoom meeting. Leave blank for defaults. If the end-of-meeting popup only appears when you fully quit Zoom, set the correct in-meeting process name here.</div>
+        <div class="field"><label>Extra meeting processes</label><input id="meetingProcs" type="text" placeholder="e.g. Teams process name"></div>
+        <div class="hint">Zoom is detected automatically. To also detect <b>Microsoft Teams</b> (or another app), add the process that runs only during its meeting — find it with the probe script (zoom-teams-probe). Comma/space separated. These ADD to the built-in Zoom detection.</div>
       </fieldset>
     </section>
 

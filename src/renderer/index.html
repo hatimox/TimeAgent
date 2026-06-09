@@ -12,6 +12,15 @@
     <label class="checkbox"><input id="activeOnly" type="checkbox" checked> Active only</label>
     <select id="stateFilter"><option>All</option></select>
     <select id="sprintFilter"><option>All</option></select>
+    <select id="sortBy" title="Sort by">
+      <option value="name">Name A–Z</option>
+      <option value="id-desc">Newest (#id ↓)</option>
+      <option value="id-asc">Oldest (#id ↑)</option>
+      <option value="type">Type (Bug/Task)</option>
+      <option value="state">State</option>
+      <option value="sprint">Sprint</option>
+      <option value="hours">My hours ↓</option>
+    </select>
     <button id="refresh" class="icon" title="Refresh">↻</button>
     <button id="settings" class="icon" title="Settings">⚙</button>
     <span id="count" class="count"></span>

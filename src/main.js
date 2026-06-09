@@ -261,7 +261,7 @@ let cachedTimes = [];      // all my time entries (for month re-slicing)
 let lastUpdated = '';      // HH:MM of last fetch
 let popover = null;        // the borderless popover window
 
-let iconNormal = null, iconMeeting = null;
+let iconMeeting = null;
 let meetingStartedAt = null;     // Date when the current meeting began
 let meetingTickTimer = null;
 
@@ -269,6 +269,19 @@ function loadIcon(file, template) {
   const img = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
   img.setTemplateImage(!!template);   // template = monochrome; non-template keeps color
   return img;
+}
+
+// The normal (not-in-meeting) tray icon, chosen for the current OS + theme.
+//  - macOS: a template image auto-adapts to the menu bar — always correct.
+//  - Linux/Windows: no template support, so pick WHITE on dark panels, BLACK on
+//    light ones, based on the OS theme (this fixes the invisible icon on Ubuntu
+//    dark mode).
+function normalTrayIcon() {
+  const { nativeTheme } = require('electron');
+  if (process.platform === 'darwin') return loadIcon('trayTemplate.png', true);
+  return nativeTheme.shouldUseDarkColors
+    ? loadIcon('trayWhite.png', false)
+    : loadIcon('trayBlack.png', false);
 }
 
 function mmss(ms) {
@@ -286,7 +299,7 @@ function setTrayIcon(meeting) {
     updateMeetingTitle();
     if (!meetingTickTimer) meetingTickTimer = setInterval(updateMeetingTitle, 1000);
   } else {
-    tray.setImage(iconNormal);             // black template
+    tray.setImage(normalTrayIcon());       // theme-aware normal icon
     tray.setTitle('');                     // clear the elapsed text
     tray.setToolTip('TimeAgent');
     meetingStartedAt = null;
@@ -303,10 +316,13 @@ function updateMeetingTitle() {
 }
 
 function buildTray() {
-  iconNormal = loadIcon('trayTemplate.png', true);        // template (adapts light/dark)
   iconMeeting = loadIcon('trayMeetingRed.png', false);    // red, full color
-  tray = new Tray(iconNormal);
+  tray = new Tray(normalTrayIcon());
   tray.setToolTip('TimeAgent');
+  // Re-apply the icon when the OS switches light/dark (Linux/Windows need it).
+  require('electron').nativeTheme.on('updated', () => {
+    if (tray && !inMeeting) tray.setImage(normalTrayIcon());
+  });
   tray.on('click', (_e, bounds) => togglePopover(bounds));
   // Right-click still gives a minimal menu (quit etc).
   tray.on('right-click', () => {

@@ -85,7 +85,7 @@ function filtered() {
   const activeOnly = $('activeOnly').checked;
   const st = $('stateFilter').value;
   const sp = $('sprintFilter').value;
-  return ITEMS.filter((it) => {
+  const list = ITEMS.filter((it) => {
     if (activeOnly && it.isFinal) return false;
     if (st !== 'All' && it.stateName !== st) return false;
     if (sp === '(none)') { if (it.sprint) return false; }
@@ -93,6 +93,22 @@ function filtered() {
     if (q && !(it.name.toLowerCase().includes(q) || String(it.id).includes(q))) return false;
     return true;
   });
+  return sortItems(list, $('sortBy') ? $('sortBy').value : 'name');
+}
+
+function sortItems(list, by) {
+  const byName = (a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  const arr = list.slice();
+  switch (by) {
+    case 'id-desc': arr.sort((a, b) => b.id - a.id); break;
+    case 'id-asc': arr.sort((a, b) => a.id - b.id); break;
+    case 'type': arr.sort((a, b) => a.displayType.localeCompare(b.displayType) || byName(a, b)); break;
+    case 'state': arr.sort((a, b) => a.stateName.localeCompare(b.stateName) || byName(a, b)); break;
+    case 'sprint': arr.sort((a, b) => (num(b.sprint) - num(a.sprint)) || byName(a, b)); break;
+    case 'hours': arr.sort((a, b) => (myHours(b.id) - myHours(a.id)) || byName(a, b)); break;
+    case 'name': default: arr.sort(byName);
+  }
+  return arr;
 }
 
 function myHours(id) {
@@ -199,7 +215,7 @@ function localDay(d, addDays) {
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 // Wire controls.
-['search', 'activeOnly', 'stateFilter', 'sprintFilter'].forEach((id) =>
+['search', 'activeOnly', 'stateFilter', 'sprintFilter', 'sortBy'].forEach((id) =>
   $(id).addEventListener('input', render));
 $('refresh').addEventListener('click', load);
 $('settings').addEventListener('click', () => window.api.openSettings());
