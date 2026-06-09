@@ -37,7 +37,8 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }, { "target": "zip", "arch": ["x64", "arm64"] }]
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }, { "target": "zip", "arch": ["x64", "arm64"] }],
+      "extraResources": [{ "from": "native/michelper", "to": "michelper" }]
     },
     "win": { "target": ["nsis"] },
     "linux": { "target": ["AppImage", "deb"], "category": "Utility" }

@@ -91,7 +91,70 @@ class ZoomWatcher {
     });
   }
 
+  // Is any microphone currently in use? The reliable, app-agnostic "in a call"
+  // signal — catches Teams/Zoom/Meet/Webex with no config. Returns true/false,
+  // or null if it can't be determined on this platform (caller falls back).
+  _micInUse() {
+    switch (process.platform) {
+      case 'darwin': return this._micMac();
+      case 'linux': return this._micLinux();
+      case 'win32': return this._micWindows();
+      default: return Promise.resolve(null);
+    }
+  }
+
+  // macOS: bundled michelper binary (CoreAudio IsRunningSomewhere on inputs).
+  _micMac() {
+    return new Promise((resolve) => {
+      const candidates = [
+        path.join(process.resourcesPath || '', 'michelper'),  // packaged app
+        path.join(__dirname, '..', 'native', 'michelper'),    // dev
+      ];
+      const bin = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+      if (!bin) { resolve(null); return; }
+      execFile(bin, [], { timeout: 4000 }, (err, out) => {
+        resolve(err ? null : String(out).trim() === '1');
+      });
+    });
+  }
+
+  // Linux: PipeWire (pw-cli) or PulseAudio (pactl) report active mic capture.
+  // A "source-output" / running capture stream = something is recording.
+  _micLinux() {
+    return new Promise((resolve) => {
+      // pactl works for both PulseAudio and PipeWire's pulse shim (most distros).
+      execFile('pactl', ['list', 'source-outputs'], { timeout: 4000 }, (err, out) => {
+        if (err) { resolve(null); return; }   // pactl missing -> unknown, fall back
+        // Any source-output that's a real capture (not monitor) & RUNNING.
+        const txt = String(out);
+        if (!txt.trim()) { resolve(false); return; }
+        // Heuristic: a running, non-monitor source-output means mic capture.
+        const blocks = txt.split(/Source Output #/).slice(1);
+        const active = blocks.some((b) =>
+          /State:\s*RUNNING/i.test(b) && !/monitor/i.test(b));
+        resolve(active);
+      });
+    });
+  }
+
+  // Windows: the CapabilityAccessManager registry tracks per-app mic usage.
+  // An app currently using the mic has LastUsedTimeStop = 0.
+  _micWindows() {
+    return new Promise((resolve) => {
+      const ps = 'Get-ChildItem -Path "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone" -Recurse ' +
+        '| Get-ItemProperty | Where-Object { $_.LastUsedTimeStop -eq 0 } | Measure-Object | Select-Object -ExpandProperty Count';
+      execFile('powershell', ['-NoProfile', '-Command', ps], { timeout: 6000 }, (err, out) => {
+        if (err) { resolve(null); return; }
+        resolve(parseInt(String(out).trim(), 10) > 0);
+      });
+    });
+  }
+
   async _inMeeting() {
+    // Primary: microphone in use (reliable for any meeting app, no config).
+    const mic = await this._micInUse();
+    if (mic !== null) return mic;
+    // Fallback: process detection (Zoom + configured Teams names).
     for (const n of this.procs) if (await this._running(n)) return true;
     return false;
   }
