@@ -53,6 +53,21 @@ class TPClient {
   }
 
   _get(path, query) { return this._request('GET', this._url(path, query)); }
+
+  // GET every page of a collection. TP caps `take` at 1000, so a single
+  // request silently drops anything past the first page.
+  async _getAllItems(path, query) {
+    const take = 1000;
+    const items = [];
+    for (let skip = 0; ; skip += take) {
+      const obj = await this._get(path, { ...query, take: String(take), skip: String(skip) });
+      const batch = obj.Items || [];
+      items.push(...batch);
+      if (batch.length < take && !obj.Next) break;
+      if (batch.length === 0) break;
+    }
+    return items;
+  }
   _post(path, body, query) { return this._request('POST', this._url(path, query), body); }
 
   // --- identity ---
@@ -74,12 +89,11 @@ class TPClient {
   }
 
   async _fetchCollection(collection) {
-    const obj = await this._get(collection, {
+    const items = await this._getAllItems(collection, {
       where: `AssignedUser.Id eq ${this.myUserId}`,
       include: '[Id,Name,EntityState[Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name]]',
-      take: '1000',
     });
-    return (obj.Items || []).map((it) => {
+    return items.map((it) => {
       const es = it.EntityState || {};
       const project = it.Project || {};
       return {
@@ -122,13 +136,12 @@ class TPClient {
 
   // --- my time entries, with the TP-assigned calendar day (offset-aware) ---
   async fetchMyTimes() {
-    const obj = await this._get('Times', {
+    const items = await this._getAllItems('Times', {
       where: `User.Id eq ${this.myUserId}`,
       include: '[Spent,Date,Assignable[Id]]',
-      take: '1000',
     });
     const out = [];
-    for (const t of obj.Items || []) {
+    for (const t of items) {
       const itemId = (t.Assignable || {}).Id || 0;
       const hours = Number(t.Spent) || 0;
       const day = TPClient.tpDay(t.Date);
