@@ -257,8 +257,23 @@ function fetchAvatar(email) {
 }
 
 // ---- windows ----
+
+// show()+focus() is not enough on Linux: most WMs ignore focus requests that
+// come from a tray/menu action, leaving the window buried. Briefly pinning it
+// always-on-top forces a raise on every platform.
+function raiseWindow(win) {
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (process.platform === 'linux') {
+    win.setAlwaysOnTop(true);
+    win.moveTop();
+    win.setAlwaysOnTop(false);
+  }
+}
+
 function createMainWindow() {
-  if (mainWindow) { mainWindow.show(); mainWindow.focus(); return; }
+  if (mainWindow) { raiseWindow(mainWindow); return; }
   mainWindow = new BrowserWindow({
     width: 760, height: 560, show: false, title: 'TimeAgent', icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
@@ -269,7 +284,7 @@ function createMainWindow() {
 }
 
 function createSettingsWindow() {
-  if (settingsWindow) { settingsWindow.show(); settingsWindow.focus(); return; }
+  if (settingsWindow) { raiseWindow(settingsWindow); return; }
   settingsWindow = new BrowserWindow({
     width: 480, height: 600, show: false, title: 'TimeAgent Settings', icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
@@ -345,18 +360,27 @@ function buildTray() {
   require('electron').nativeTheme.on('updated', () => {
     if (tray && !inMeeting) tray.setImage(normalTrayIcon());
   });
-  tray.on('click', (_e, bounds) => togglePopover(bounds));
-  // Right-click still gives a minimal menu (quit etc).
-  tray.on('right-click', () => {
-    tray.popUpContextMenu(Menu.buildFromTemplate([
-      { label: 'Open tasks…', click: createMainWindow },
-      { label: 'Settings…', click: createSettingsWindow },
-      { label: 'Check for updates…', click: checkForUpdatesManual },
+  const menuItems = () => [
+    { label: 'Open tasks…', click: createMainWindow },
+    { label: 'Settings…', click: createSettingsWindow },
+    { label: 'Check for updates…', click: checkForUpdatesManual },
+    { type: 'separator' },
+    { label: `Version ${app.getVersion()}`, enabled: false },
+    { label: 'Quit', click: () => app.quit() },
+  ];
+  if (process.platform === 'linux') {
+    // Ubuntu/GNOME trays are AppIndicators: they never emit click events, so
+    // a static context menu (opened by any mouse button) is the only way in.
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Totals…', click: () => togglePopover(null) },
       { type: 'separator' },
-      { label: `Version ${app.getVersion()}`, enabled: false },
-      { label: 'Quit', click: () => app.quit() },
+      ...menuItems(),
     ]));
-  });
+  } else {
+    tray.on('click', (_e, bounds) => togglePopover(bounds));
+    // Right-click still gives a minimal menu (quit etc).
+    tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate(menuItems())));
+  }
 }
 
 function createPopover() {
