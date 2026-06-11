@@ -118,21 +118,34 @@ class ZoomWatcher {
     });
   }
 
-  // Linux: PipeWire (pw-cli) or PulseAudio (pactl) report active mic capture.
-  // A "source-output" / running capture stream = something is recording.
+  // Linux: PulseAudio / PipeWire's pulse shim report capture streams as
+  // "source-outputs". A live (non-corked) capture from a real input device
+  // (not a .monitor source = desktop audio) means something is recording.
+  // NOTE: these blocks have a "Corked:" line, NOT "State:" (that's sources).
   _micLinux() {
     return new Promise((resolve) => {
-      // pactl works for both PulseAudio and PipeWire's pulse shim (most distros).
-      execFile('pactl', ['list', 'source-outputs'], { timeout: 4000 }, (err, out) => {
-        if (err) { resolve(null); return; }   // pactl missing -> unknown, fall back
-        // Any source-output that's a real capture (not monitor) & RUNNING.
-        const txt = String(out);
-        if (!txt.trim()) { resolve(false); return; }
-        // Heuristic: a running, non-monitor source-output means mic capture.
-        const blocks = txt.split(/Source Output #/).slice(1);
-        const active = blocks.some((b) =>
-          /State:\s*RUNNING/i.test(b) && !/monitor/i.test(b));
-        resolve(active);
+      // First map which source indices are monitors so we can exclude them.
+      execFile('pactl', ['list', 'short', 'sources'], { timeout: 4000 }, (errS, outS) => {
+        if (errS) { resolve(null); return; }   // pactl missing -> unknown, fall back
+        const monitors = new Set();
+        for (const line of String(outS).split('\n')) {
+          const [idx, name] = line.split('\t');
+          if (name && /\.monitor$/.test(name.trim())) monitors.add(idx.trim());
+        }
+        execFile('pactl', ['list', 'source-outputs'], { timeout: 4000 }, (err, out) => {
+          if (err) { resolve(null); return; }
+          const txt = String(out);
+          if (!txt.trim()) { resolve(false); return; }
+          const blocks = txt.split(/Source Output #/).slice(1);
+          const active = blocks.some((b) => {
+            const live = /Corked:\s*no/i.test(b) || /State:\s*RUNNING/i.test(b);
+            if (!live) return false;
+            const src = b.match(/^\s*Source:\s*(\d+)\s*$/m);
+            const fromMonitor = (src && monitors.has(src[1])) || /\.monitor\b/i.test(b);
+            return !fromMonitor;
+          });
+          resolve(active);
+        });
       });
     });
   }
@@ -153,8 +166,13 @@ class ZoomWatcher {
   async _inMeeting() {
     // Primary: microphone in use (reliable for any meeting app, no config).
     const mic = await this._micInUse();
-    if (mic !== null) return mic;
-    // Fallback: process detection (Zoom + configured Teams names).
+    if (mic === null && !this._micWarned) {
+      this._micWarned = true;
+      this.log('mic detection unavailable (helper/pactl missing) — process fallback only');
+    }
+    if (mic) return true;
+    // Process detection (Zoom + configured Teams names) still applies: it
+    // covers mic-unavailable platforms AND meetings joined without a mic.
     for (const n of this.procs) if (await this._running(n)) return true;
     return false;
   }
