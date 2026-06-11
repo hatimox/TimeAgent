@@ -429,8 +429,17 @@ ipcMain.handle('get-settings', () => ({ ...store.data, tpToken: store.token, isC
 ipcMain.handle('save-settings', async (_e, incoming) => {
   const token = incoming.tpToken || '';
   delete incoming.tpToken;
+  // A different token (or server) means a different logged-in user: drop the
+  // cached id so ensureUserId() re-detects it, otherwise reads keep targeting
+  // the old user while writes go to the new token's owner.
+  const identityChanged = token !== store.token ||
+    (incoming.tpURL != null && incoming.tpURL !== store.data.tpURL);
   store.data = { ...store.data, ...incoming };
   store.token = token;
+  if (identityChanged) {
+    store.data.myUserId = 0;
+    cachedTimes = [];                     // stale: belongs to the previous user
+  }
   await store.save();
   makeClient();
   await ensureUserId();
