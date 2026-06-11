@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
 <title>TimeAgent</title>
 <link rel="stylesheet" href="app.css">
 <style>
@@ -12,6 +12,9 @@
   .pop-head .dot.live { background: var(--bug); }
   .pop-head h1 { font-size: 14px; font-weight: 700; margin: 0; flex: 1; }
   .pop-head .meeting { font-size: 11px; color: var(--bug); font-weight: 600; }
+  .pop-head .user { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); max-width: 55%; }
+  .pop-head .user span.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pop-head .avatar { width: 20px; height: 20px; font-size: 9px; }
 
   .tiles { display: flex; gap: 8px; margin-bottom: 8px; }
   .tile { flex: 1; background: var(--surface-2); border-radius: 10px; padding: 10px 6px; text-align: center; }
@@ -38,6 +41,11 @@
     <div id="dot" class="dot"></div>
     <h1>TimeAgent</h1>
     <span id="meeting" class="meeting" style="display:none">In meeting</span>
+    <div id="user" class="user" style="display:none">
+      <img id="userAvatar" class="avatar" style="display:none" alt="">
+      <span id="userInitials" class="avatar initials" style="display:none"></span>
+      <span id="userName" class="name"></span>
+    </div>
   </div>
 
   <div class="tiles">

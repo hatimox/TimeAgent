@@ -224,14 +224,36 @@ function startZoomWatcher() {
 
 async function ensureUserId() {
   if (!client) return;
-  if (!store.data.myUserId) {
+  if (!store.data.myUserId || !store.data.myUserName) {
     try {
       const me = await client.whoAmI();
       store.data.myUserId = me.id;
+      store.data.myUserName = me.name;
+      store.data.myUserEmail = me.email;
       client.myUserId = me.id;
       await store.save();
     } catch (e) { /* surfaced in UI when queries fail */ }
   }
+}
+
+// Avatar: TP's API has no avatar field and its avatar endpoint is cookie-only,
+// so try Gravatar for the user's email; the UI falls back to initials.
+let avatarCache = null;   // { email, dataURL }
+function fetchAvatar(email) {
+  if (!email) return Promise.resolve(null);
+  if (avatarCache && avatarCache.email === email) return Promise.resolve(avatarCache.dataURL);
+  return new Promise((resolve) => {
+    const done = (dataURL) => { avatarCache = { email, dataURL }; resolve(dataURL); };
+    const md5 = require('crypto').createHash('md5').update(email.trim().toLowerCase()).digest('hex');
+    const req = require('https').get(`https://www.gravatar.com/avatar/${md5}?s=128&d=404`, (res) => {
+      if (res.statusCode !== 200) { res.resume(); done(null); return; }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => done(`data:${res.headers['content-type'] || 'image/png'};base64,${Buffer.concat(chunks).toString('base64')}`));
+    });
+    req.on('error', () => done(null));
+    req.setTimeout(4000, () => { req.destroy(); done(null); });
+  });
 }
 
 // ---- windows ----
@@ -438,6 +460,9 @@ ipcMain.handle('save-settings', async (_e, incoming) => {
   store.token = token;
   if (identityChanged) {
     store.data.myUserId = 0;
+    store.data.myUserName = '';
+    store.data.myUserEmail = '';
+    avatarCache = null;
     cachedTimes = [];                     // stale: belongs to the previous user
   }
   await store.save();
@@ -475,6 +500,14 @@ ipcMain.handle('log-time', async (_e, { entityId, hours, description, dateISO })
     updateTotals();   // refresh tray totals after logging
     return { ok: true, id };
   } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle('get-user-info', async () => {
+  if (!client) return { error: 'not-configured' };
+  await ensureUserId();
+  const { myUserId, myUserName, myUserEmail } = store.data;
+  if (!myUserId) return { error: 'unknown-user' };
+  return { id: myUserId, name: myUserName, email: myUserEmail, avatar: await fetchAvatar(myUserEmail) };
 });
 
 ipcMain.handle('open-external', (_e, url) => { require('electron').shell.openExternal(url); });

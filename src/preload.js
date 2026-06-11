@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   loadData: (opts) => ipcRenderer.invoke('load-data', opts),
+  getUserInfo: () => ipcRenderer.invoke('get-user-info'),
   logTime: (p) => ipcRenderer.invoke('log-time', p),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openSettings: () => ipcRenderer.invoke('open-settings-window'),

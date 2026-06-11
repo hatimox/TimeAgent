@@ -24,6 +24,8 @@ function dataDir(app) {
 const DEFAULTS = () => ({
   tpURL: '',
   myUserId: 0,
+  myUserName: '',
+  myUserEmail: '',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   dailyTaskId: 0,
   meetingsTaskId: 0,

@@ -75,7 +75,7 @@ class TPClient {
     const obj = await this._get('Context');
     const u = obj.LoggedUser;
     if (!u || u.Id == null) throw new Error('Could not read logged-in user from token');
-    return { id: u.Id, name: `${u.FirstName || ''} ${u.LastName || ''}`.trim() };
+    return { id: u.Id, name: `${u.FirstName || ''} ${u.LastName || ''}`.trim(), email: u.Email || '' };
   }
 
   // --- items (Tasks + Bugs assigned to me) ---

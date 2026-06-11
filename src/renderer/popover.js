@@ -21,6 +21,25 @@ $('settings').addEventListener('click', () => window.api.openSettings());
 $('refresh').addEventListener('click', async () => { await window.api.forceRefresh(); refresh(); });
 $('quit').addEventListener('click', () => window.api.quit());
 
+// Signed-in user (avatar + name) in the header; initials when no Gravatar.
+async function showUser() {
+  const u = await window.api.getUserInfo();
+  if (!u || u.error || !u.id) { $('user').style.display = 'none'; return; }
+  $('user').style.display = 'flex';
+  $('userName').textContent = u.name || `user ${u.id}`;
+  if (u.avatar) {
+    $('userAvatar').src = u.avatar;
+    $('userAvatar').style.display = '';
+    $('userInitials').style.display = 'none';
+  } else {
+    const initials = (u.name || '?').split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+    $('userInitials').textContent = initials || '?';
+    $('userInitials').style.display = 'inline-flex';
+    $('userAvatar').style.display = 'none';
+  }
+}
+showUser();
+
 // Re-pull whenever the popover becomes visible or the main process pushes data.
 window.addEventListener('focus', refresh);
 window.api.onTotalsUpdated(() => refresh());

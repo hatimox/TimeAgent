@@ -127,7 +127,7 @@ async function init() {
   (Array.isArray(s.religiousSlots) ? s.religiousSlots : []).forEach((slot) => {
     if (slot && slot.key) religiousSlots[slot.key] = { date: slot.date, on: slot.on };
   });
-  if (s.myUserId) $('whoami').textContent = `Signed in (user id ${s.myUserId})`;
+  showWhoAmI();
   renderRecurring(); roundExample(); renderWeekly(); renderDaysOff();
   await renderRegion();
   window.api.getVersion().then((v) => { $('version').textContent = `TimeAgent v${v}`; });
@@ -203,10 +203,21 @@ $('save').addEventListener('click', async () => {
   const res = await window.api.saveSettings(payload);
   if (res.ok) {
     $('status').textContent = res.isConfigured ? 'Saved ✓' : 'Saved — but token/URL incomplete';
-    const s2 = await window.api.getSettings();
-    if (s2.myUserId) $('whoami').textContent = `Signed in (user id ${s2.myUserId})`;
+    showWhoAmI();
   } else { $('status').textContent = 'Save failed'; }
 });
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+async function showWhoAmI() {
+  const el = $('whoami');
+  const u = await window.api.getUserInfo();
+  if (!u || u.error || !u.id) { el.textContent = ''; return; }
+  const initials = (u.name || '?').split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  const pic = u.avatar
+    ? `<img class="avatar" src="${u.avatar}" alt="">`
+    : `<span class="avatar initials">${esc(initials || '?')}</span>`;
+  el.innerHTML = `${pic}<span>${esc(u.name || 'Signed in')} <span class="muted">(id ${u.id})</span></span>`;
+}
+
 init();
