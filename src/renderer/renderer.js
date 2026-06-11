@@ -2,6 +2,7 @@
 // Main window logic: load items + times, filter, log time, compute totals.
 
 let ITEMS = [], TIMES = [], STATES = [], TZOFF = -new Date().getTimezoneOffset();
+let SCOPE = 'current';    // 'current' = only the active sprint is fetched; 'all' = everything
 let monthOffset = 0;
 let activeTimer = null;   // { id, name, start: Date }
 let tickHandle = null;
@@ -52,7 +53,7 @@ async function stopTimer(silent) {
 
 async function load() {
   $('status').textContent = 'Loading…';
-  const res = await window.api.loadData();
+  const res = await window.api.loadData({ scope: SCOPE });
   if (res.error === 'not-configured') { $('status').textContent = 'Open Settings to configure your TargetProcess token.'; return; }
   if (res.error) { $('status').textContent = 'Load failed: ' + res.error; return; }
   ITEMS = res.items; TIMES = res.times; STATES = res.states;
@@ -60,7 +61,7 @@ async function load() {
   populateFilters();
   render();
   computeTotals();
-  $('status').textContent = `Loaded ${ITEMS.length} items`;
+  $('status').textContent = `Loaded ${ITEMS.length} items${SCOPE === 'current' ? ' (current sprint)' : ''}`;
 }
 
 function populateFilters() {
@@ -73,7 +74,8 @@ function populateFilters() {
     .sort((a, b) => (num(b) - num(a)) || a.localeCompare(b));
   const sprintSel = $('sprintFilter');
   const cs = sprintSel.value;
-  let opts = '<option>All</option>' + sprints.map((s) => `<option>${esc(s)}</option>`).join('');
+  let opts = '<option value="__current">Current sprint</option><option>All</option>'
+    + sprints.map((s) => `<option>${esc(s)}</option>`).join('');
   if (ITEMS.some((i) => !i.sprint)) opts += '<option>(none)</option>';
   sprintSel.innerHTML = opts;
   if ([...sprintSel.options].some((o) => o.value === cs)) sprintSel.value = cs;
@@ -89,7 +91,8 @@ function filtered() {
     if (activeOnly && it.isFinal) return false;
     if (st !== 'All' && it.stateName !== st) return false;
     if (sp === '(none)') { if (it.sprint) return false; }
-    else if (sp !== 'All' && it.sprint !== sp) return false;
+    // '__current' needs no predicate: the fetch itself was sprint-scoped.
+    else if (sp !== 'All' && sp !== '__current' && it.sprint !== sp) return false;
     if (q && !(it.name.toLowerCase().includes(q) || String(it.id).includes(q))) return false;
     return true;
   });
@@ -215,8 +218,15 @@ function localDay(d, addDays) {
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 // Wire controls.
-['search', 'activeOnly', 'stateFilter', 'sprintFilter', 'sortBy'].forEach((id) =>
+['search', 'activeOnly', 'stateFilter', 'sortBy'].forEach((id) =>
   $(id).addEventListener('input', render));
+// The sprint filter drives the fetch scope: "Current sprint" keeps the cheap
+// sprint-scoped query; anything else needs the full assignment list once.
+$('sprintFilter').addEventListener('input', async () => {
+  const want = $('sprintFilter').value === '__current' ? 'current' : 'all';
+  if (want !== SCOPE) { SCOPE = want; await load(); return; }
+  render();
+});
 $('refresh').addEventListener('click', load);
 $('settings').addEventListener('click', () => window.api.openSettings());
 $('prevMonth').addEventListener('click', () => { monthOffset--; computeMonth(); });

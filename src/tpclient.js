@@ -79,18 +79,22 @@ class TPClient {
   }
 
   // --- items (Tasks + Bugs assigned to me) ---
-  async fetchAllAssigned() {
+  // currentSprintOnly limits the query to the active TeamIteration — far
+  // cheaper than paging through a user's full assignment history.
+  async fetchAllAssigned({ currentSprintOnly = false } = {}) {
     const [tasks, bugs] = await Promise.all([
-      this._fetchCollection('Tasks'),
-      this._fetchCollection('Bugs'),
+      this._fetchCollection('Tasks', currentSprintOnly),
+      this._fetchCollection('Bugs', currentSprintOnly),
     ]);
     return [...tasks, ...bugs].sort((a, b) =>
       a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }
 
-  async _fetchCollection(collection) {
+  async _fetchCollection(collection, currentSprintOnly) {
+    let where = `AssignedUser.Id eq ${this.myUserId}`;
+    if (currentSprintOnly) where += ` and (TeamIteration.IsCurrent eq 'true')`;
     const items = await this._getAllItems(collection, {
-      where: `AssignedUser.Id eq ${this.myUserId}`,
+      where,
       include: '[Id,Name,EntityState[Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name]]',
     });
     return items.map((it) => {

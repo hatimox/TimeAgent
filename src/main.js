@@ -448,12 +448,12 @@ ipcMain.handle('save-settings', async (_e, incoming) => {
   return { ok: true, isConfigured: store.isConfigured };
 });
 
-ipcMain.handle('load-data', async () => {
+ipcMain.handle('load-data', async (_e, opts) => {
   if (!client) return { error: 'not-configured' };
   await ensureUserId();
   try {
     const [items, times] = await Promise.all([
-      client.fetchAllAssigned(),
+      client.fetchAllAssigned({ currentSprintOnly: !opts || opts.scope !== 'all' }),
       client.fetchMyTimes(),
     ]);
     const dom = dominantProcessId(items);
