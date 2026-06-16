@@ -197,5 +197,6 @@ legend { font-weight: 700; padding: 0 6px; color: var(--muted); text-transform: 
 .avatar.initials { display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 11px; letter-spacing: .02em; }
 .rec { display: flex; gap: 7px; margin: 6px 0; }
 .rec input.lbl { flex: 1; } .rec input.num { width: 90px; } .rec input.hr { width: 60px; }
-.rec button.del { color: var(--bug); border-color: var(--border); }
+.rec input.dynName { flex: 1; } .rec input.dynTask { width: 90px; } .rec input.dynDesc { flex: 1.5; }
+.rec button.del, .rec button.delDyn { color: var(--bug); border-color: var(--border); }
 .row-actions { display: flex; gap: 10px; align-items: center; margin-top: 16px; }

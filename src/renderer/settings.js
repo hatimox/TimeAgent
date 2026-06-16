@@ -4,6 +4,7 @@ let recurring = [];
 let daysOff = [];
 let weeklyOff = [0, 6];
 let region = 'none';
+let dynamicMeetings = [];
 // Religious holidays keyed by slot so edits stick: { "year|name|idx": {date, on} }
 let religiousSlots = {};
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -100,6 +101,16 @@ function renderRecurring() {
     </div>`).join('');
 }
 
+function renderDynamic() {
+  $('dynamicList').innerHTML = dynamicMeetings.map((d, i) => `
+    <div class="rec dyn" data-i="${i}">
+      <input class="dynName" placeholder="Name" value="${esc(d.name)}">
+      <input class="dynTask" type="number" placeholder="Task id" value="${d.taskId || ''}">
+      <input class="dynDesc" placeholder="Default description" value="${esc(d.description)}">
+      <button class="delDyn">✕</button>
+    </div>`).join('') || '<span class="hint">No dynamic meetings configured.</span>';
+}
+
 function roundExample() {
   const mn = Math.max(0, Number($('meetingMinMinutes').value) || 0);
   const step = Math.max(1, Number($('meetingStepMinutes').value) || 1);
@@ -123,12 +134,13 @@ async function init() {
   daysOff = Array.isArray(s.daysOff) ? s.daysOff.slice() : [];
   weeklyOff = Array.isArray(s.weeklyOff) ? s.weeklyOff.slice() : [0, 6];
   region = s.region || 'none';
+  dynamicMeetings = Array.isArray(s.dynamicMeetings) ? s.dynamicMeetings.slice() : [];
   religiousSlots = {};
   (Array.isArray(s.religiousSlots) ? s.religiousSlots : []).forEach((slot) => {
     if (slot && slot.key) religiousSlots[slot.key] = { date: slot.date, on: slot.on };
   });
   showWhoAmI();
-  renderRecurring(); roundExample(); renderWeekly(); renderDaysOff();
+  renderRecurring(); renderDynamic(); roundExample(); renderWeekly(); renderDaysOff();
   await renderRegion();
   window.api.getVersion().then((v) => { $('version').textContent = `TimeAgent v${v}`; });
 }
@@ -180,6 +192,28 @@ $('recList').addEventListener('input', (e) => {
   };
 });
 $('addRec').addEventListener('click', () => { recurring.push({ label: 'New entry', taskId: 0, hours: 1 }); renderRecurring(); });
+
+$('dynamicList').addEventListener('click', (e) => {
+  if (e.target.classList.contains('delDyn')) {
+    dynamicMeetings.splice(Number(e.target.closest('.dyn').dataset.i), 1);
+    renderDynamic();
+  }
+});
+$('dynamicList').addEventListener('input', (e) => {
+  const row = e.target.closest('.dyn'); if (!row) return;
+  const i = Number(row.dataset.i);
+  dynamicMeetings[i] = {
+    id: dynamicMeetings[i].id || `dm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: row.querySelector('.dynName').value,
+    taskId: Number(row.querySelector('.dynTask').value) || 0,
+    description: row.querySelector('.dynDesc').value,
+  };
+});
+$('addDynamic').addEventListener('click', () => {
+  dynamicMeetings.push({ id: `dm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: 'New meeting', taskId: 0, description: '' });
+  renderDynamic();
+});
+
 ['meetingMinMinutes', 'meetingStepMinutes'].forEach((id) => $(id).addEventListener('input', roundExample));
 
 $('save').addEventListener('click', async () => {
@@ -199,6 +233,7 @@ $('save').addEventListener('click', async () => {
     region,
     religiousSlots: (collectReligious(),
       Object.entries(religiousSlots).map(([key, v]) => ({ key, date: v.date, on: v.on }))),
+    dynamicMeetings: dynamicMeetings.filter((d) => d.name.trim() || d.taskId),
   };
   const res = await window.api.saveSettings(payload);
   if (res.ok) {

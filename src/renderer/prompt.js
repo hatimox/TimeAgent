@@ -7,6 +7,8 @@ $('label').textContent = api.label;
 const input = $('text');
 const hasTask = api.taskId != null;
 const defaultId = hasTask ? (Number(api.taskId) || 0) : Number(api.taskId);
+const readOnlyTask = api.readOnlyTask;
+input.value = api.defaultDescription || '';
 
 const search = $('taskSearch');
 const results = $('results');
@@ -68,35 +70,42 @@ function choose(id) {
 if (hasTask) {
   $('taskRow').style.display = '';
   showChosen();
-  api.getActiveTasks().then((res) => {
-    if (res && Array.isArray(res.items)) TASKS = res.items;
-  }).catch(() => {});
 
-  search.addEventListener('input', filter);
-  search.addEventListener('focus', () => { if (search.value.trim()) filter(); });
-  search.addEventListener('keydown', (e) => {
-    const rows = [...results.querySelectorAll('.result')];
-    if (e.key === 'ArrowDown' && rows.length) {
-      e.preventDefault(); activeIdx = Math.min(activeIdx + 1, rows.length - 1);
-      rows.forEach((r, i) => r.classList.toggle('active', i === activeIdx));
-      rows[activeIdx].scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'ArrowUp' && rows.length) {
-      e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0);
-      rows.forEach((r, i) => r.classList.toggle('active', i === activeIdx));
-      rows[activeIdx].scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter') {
-      if (results.classList.contains('open') && rows[activeIdx]) {
-        e.preventDefault(); choose(rows[activeIdx].dataset.id);
-      } else { done(false); }
-    } else if (e.key === 'Escape') {
-      if (results.classList.contains('open')) { e.preventDefault(); closeResults(); }
-      else done(true);
-    }
-  });
-  results.addEventListener('click', (e) => {
-    const li = e.target.closest('.result');
-    if (li) choose(li.dataset.id);
-  });
+  if (readOnlyTask) {
+    // Task is locked to the caller's choice; hide the search UI.
+    search.style.display = 'none';
+    chosenEl.innerHTML += ' <span class="pill">locked</span>';
+  } else {
+    api.getActiveTasks().then((res) => {
+      if (res && Array.isArray(res.items)) TASKS = res.items;
+    }).catch(() => {});
+
+    search.addEventListener('input', filter);
+    search.addEventListener('focus', () => { if (search.value.trim()) filter(); });
+    search.addEventListener('keydown', (e) => {
+      const rows = [...results.querySelectorAll('.result')];
+      if (e.key === 'ArrowDown' && rows.length) {
+        e.preventDefault(); activeIdx = Math.min(activeIdx + 1, rows.length - 1);
+        rows.forEach((r, i) => r.classList.toggle('active', i === activeIdx));
+        rows[activeIdx].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'ArrowUp' && rows.length) {
+        e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0);
+        rows.forEach((r, i) => r.classList.toggle('active', i === activeIdx));
+        rows[activeIdx].scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter') {
+        if (results.classList.contains('open') && rows[activeIdx]) {
+          e.preventDefault(); choose(rows[activeIdx].dataset.id);
+        } else { done(false); }
+      } else if (e.key === 'Escape') {
+        if (results.classList.contains('open')) { e.preventDefault(); closeResults(); }
+        else done(true);
+      }
+    });
+    results.addEventListener('click', (e) => {
+      const li = e.target.closest('.result');
+      if (li) choose(li.dataset.id);
+    });
+  }
 }
 
 input.focus();
