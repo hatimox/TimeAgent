@@ -215,7 +215,6 @@ function startZoomWatcher() {
         inMeeting = active;
         if (sessionChanged) meetingStartedAt = new Date(startMs);  // reset before tray reads it
         setTrayIcon(active);   // swap the menu-bar icon + start/stop the timer
-        if (flipped) refreshTrayMenu();   // show/hide the Split item (Linux menu)
         if (popover && popover.isVisible()) {
           popover.webContents.send('meeting-state', active,
             active && meetingStartedAt ? meetingStartedAt.getTime() : 0);
@@ -371,28 +370,20 @@ function buildTray() {
   if (process.platform === 'linux') {
     // Ubuntu/GNOME trays are AppIndicators: they never emit click events, so
     // a static context menu (opened by any mouse button) is the only way in.
-    // Rebuilt on meeting state changes so "Split meeting" appears during calls.
+    // "Totals…" opens the popover, where the meeting actions (Split / Stop) live.
     refreshTrayMenu();
   } else {
     tray.on('click', (_e, bounds) => togglePopover(bounds));
-    // Right-click still gives a minimal menu (incl. Split during a meeting).
     tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate(trayMenuTemplate())));
   }
 }
 
-// Tray menu contents. Includes meeting-only actions (Split) when in a call so
-// the feature is reachable on every platform — Linux especially, where the
-// popover isn't click-accessible.
+// Tray menu contents. Meeting actions (Split / Stop) live in the popover, not
+// here — on Linux "Totals…" opens that popover.
 function trayMenuTemplate() {
   const items = [];
   if (process.platform === 'linux') {
     items.push({ label: 'Totals…', click: () => togglePopover(null) }, { type: 'separator' });
-  }
-  if (inMeeting) {
-    items.push(
-      { label: '⏹▶ Split meeting (log & start new)', click: () => zoomWatcher && zoomWatcher.splitNow() },
-      { type: 'separator' },
-    );
   }
   items.push(
     { label: 'Open tasks…', click: createMainWindow },
@@ -405,8 +396,7 @@ function trayMenuTemplate() {
   return items;
 }
 
-// Linux uses a persistent context menu, so rebuild it whenever the meeting
-// state flips. (On mac/Windows the right-click menu is built fresh each open.)
+// Linux uses a persistent context menu; rebuild on demand.
 function refreshTrayMenu() {
   if (!tray || process.platform !== 'linux') return;
   tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate()));
@@ -669,6 +659,12 @@ ipcMain.handle('get-meeting-state', () => ({
 ipcMain.handle('split-meeting', async () => {
   if (!zoomWatcher) return { ok: false, reason: 'not-running' };
   return zoomWatcher.splitNow();
+});
+// Stop tracking the current meeting without leaving Zoom. Logs the elapsed
+// segment via the normal prompt, then ignores the call until the mic goes idle.
+ipcMain.handle('stop-tracking-meeting', async () => {
+  if (!zoomWatcher) return { ok: false, reason: 'not-running' };
+  return zoomWatcher.stopTracking({ log: true });
 });
 
 // ---- helpers ----

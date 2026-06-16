@@ -34,6 +34,14 @@
   .actions .row2 { display: flex; gap: 6px; }
   .actions .row2 button { flex: 1; text-align: center; }
   .pop-status { font-size: 11px; color: var(--muted); margin-top: 8px; min-height: 14px; }
+
+  /* Meeting controls, shown just below the title only while in a call. */
+  .meet-actions { display: flex; gap: 6px; margin-bottom: 10px; }
+  .meet-actions button { flex: 1; text-align: center; padding: 7px 8px; font-size: 12px; font-weight: 600; }
+  .meet-actions #split { color: var(--accent); border-color: var(--accent); }
+  .meet-actions #split:hover { background: var(--accent-soft); }
+  .meet-actions #stopTrack { color: #fff; background: var(--bug); border-color: var(--bug); }
+  .meet-actions #stopTrack:hover { filter: brightness(1.05); }
 </style>
 </head>
 <body>
@@ -48,6 +56,11 @@
     </div>
   </div>
 
+  <div id="meetActions" class="meet-actions" style="display:none">
+    <button id="split" title="Log the current segment and start a new one (e.g. breakout room)">⏹▶ Split</button>
+    <button id="stopTrack" title="Stop tracking this meeting (logs time so far) without leaving the call">⏹ Stop tracking</button>
+  </div>
+
   <div class="tiles">
     <div class="tile"><b id="today">0.00h</b><span>Today</span></div>
     <div class="tile"><b id="week">0.00h</b><span>Week</span></div>
@@ -60,7 +73,6 @@
   </div>
 
   <div class="actions">
-    <button id="split" style="display:none">⏹▶ Split meeting (log &amp; start new)</button>
     <button id="open">📋 Open tasks…</button>
     <div class="row2">
       <button id="settings">⚙ Settings</button>

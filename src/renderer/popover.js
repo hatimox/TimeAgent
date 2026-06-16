@@ -46,7 +46,7 @@ window.api.onTotalsUpdated(() => refresh());
 let meetingStart = 0, meetingTick = null;
 function setMeeting(active, startedAt) {
   $('dot').classList.toggle('live', active);
-  $('split').style.display = active ? 'block' : 'none';
+  $('meetActions').style.display = active ? 'flex' : 'none';
   if (active) {
     meetingStart = startedAt || Date.now();
     tickMeeting();
@@ -58,10 +58,17 @@ function setMeeting(active, startedAt) {
 }
 
 $('split').addEventListener('click', async () => {
-  $('split').disabled = true;
+  $('split').disabled = $('stopTrack').disabled = true;
   const res = await window.api.splitMeeting();
-  $('split').disabled = false;
+  $('split').disabled = $('stopTrack').disabled = false;
   if (!res || !res.ok) $('status').textContent = 'No active meeting to split';
+});
+
+$('stopTrack').addEventListener('click', async () => {
+  $('split').disabled = $('stopTrack').disabled = true;
+  const res = await window.api.stopTrackingMeeting();
+  $('split').disabled = $('stopTrack').disabled = false;
+  if (!res || !res.ok) $('status').textContent = 'No active meeting to stop';
 });
 function tickMeeting() {
   const s = Math.floor((Date.now() - meetingStart) / 1000);

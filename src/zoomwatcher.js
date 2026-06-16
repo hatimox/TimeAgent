@@ -57,6 +57,8 @@ class ZoomWatcher {
     this.sessionStart = null;
     this.lastSeen = null;
     this.busy = false;                // a dialog is open
+    this.suppressed = false;          // user stopped tracking this call; ignore
+                                      // detection until the mic goes idle again
   }
 
   start() {
@@ -199,11 +201,45 @@ class ZoomWatcher {
     return { ok: true };
   }
 
+  // Stop tracking the current meeting WITHOUT logging it, and don't re-open a
+  // session while still in the call — detection resumes once the mic goes idle
+  // (you leave Zoom). The elapsed segment is logged first via the normal flow
+  // when long enough, so you don't lose time already spent; pass {log:false} to
+  // discard it entirely.
+  async stopTracking({ log = true } = {}) {
+    if (!this.sessionStart || this.busy) return { ok: false, reason: 'no-active-meeting' };
+    const start = this.sessionStart;
+    const end = Date.now();
+    this.sessionStart = null; this.lastSeen = null;
+    this.suppressed = true;
+    const durSec = (end - start) / 1000;
+    this.log(`meeting STOP-TRACKING dur=${Math.round(durSec)}s log=${log}`);
+    if (log && durSec >= this.minSeconds) {
+      await this.handleEnd(new Date(start), new Date(end));
+    } else if (!log) {
+      this.onStatus('Stopped tracking — meeting not logged');
+    }
+    // Reflect "not in a meeting" immediately.
+    this.onMeetingState(false, 0);
+    this.schedule(this.activePollMs);
+    return { ok: true };
+  }
+
   async poll() {
     if (this.busy) { this.schedule(this.activePollMs); return; }
     let active = false;
     try { active = await this._inMeeting(); } catch (_) {}
     const now = Date.now();
+    // "Stop tracking" suppresses the current call until the mic goes idle, so a
+    // poll doesn't immediately re-open a session while you're still in Zoom.
+    if (this.suppressed) {
+      if (!active) { this.suppressed = false; this.log('tracking resumed (mic idle)'); }
+      else {
+        this.onMeetingState(false, 0);
+        this.schedule(this.activePollMs);
+        return;
+      }
+    }
     if (active) {
       if (!this.sessionStart) { this.sessionStart = now; this.log('meeting STARTED'); }
       this.lastSeen = now;
@@ -242,14 +278,14 @@ class ZoomWatcher {
       const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       const win = `${hhmm(start)}-${hhmm(end)}`;
 
-      // 1) Daily / Defined list / Search / Cancel
+      // 1) Daily / Defined list / Choose task / Cancel
       const dynamicMeetings = cfg.dynamicMeetings || [];
       const hasDynamic = dynamicMeetings.length > 0;
       const choice = dialog.showMessageBoxSync({
         type: 'question',
         message: `Meeting ended (${win}, ${hours.toFixed(2)}h)`,
         detail: 'How should this be logged?',
-        buttons: ['Daily', 'Defined list', 'Search', 'Cancel'],
+        buttons: ['Daily', 'Defined list', 'Choose task', 'Cancel'],
         defaultId: 0, cancelId: 3, noLink: true,
       });
       if (choice === 3) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
@@ -273,7 +309,7 @@ class ZoomWatcher {
       }
 
       if (choice === 2) {
-        // Search: existing description + task-search prompt. Save logs the
+        // Choose task: description + task-search prompt. Save logs the
         // meeting; Skip (or closing the prompt) discards it entirely.
         const res = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
           'What was it about? (used as the time-log description)',
