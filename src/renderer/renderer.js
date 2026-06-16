@@ -142,6 +142,7 @@ function render() {
           <div class="meta">
             <span class="badge ${cls}">${it.displayType}</span>
             <a href="#" data-tp="${it.id}">#${it.id} ↗</a>
+            ${it.usId ? `<a href="#" class="us-link" data-tp="${it.usId}" title="${esc(it.usName)}">US #${it.usId} ↗</a>` : ''}
             <button type="button" class="state stateBtn ${it.isFinal ? '' : 'active'}" data-state-id="${it.id}" title="Click to change status">${esc(it.stateName)} ▾</button>
             <span>${esc(it.projectName)}</span> ${sprint}
           </div>

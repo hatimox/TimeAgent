@@ -95,11 +95,12 @@ class TPClient {
     if (currentSprintOnly) where += ` and (TeamIteration.IsCurrent eq 'true')`;
     const items = await this._getAllItems(collection, {
       where,
-      include: '[Id,Name,EntityState[Id,Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name]]',
+      include: '[Id,Name,EntityState[Id,Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name],UserStory[Id,Name]]',
     });
     return items.map((it) => {
       const es = it.EntityState || {};
       const project = it.Project || {};
+      const us = it.UserStory || {};
       return {
         id: it.Id,
         name: it.Name,
@@ -111,6 +112,8 @@ class TPClient {
         projectName: project.Name || '',
         processId: (project.Process || {}).Id || 0,
         sprint: (it.TeamIteration || {}).Name || '',
+        usId: us.Id || 0,                  // parent User Story (0 if none)
+        usName: us.Name || '',
       };
     }).filter((x) => x.id != null);
   }

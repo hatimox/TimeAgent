@@ -17,15 +17,21 @@ const chosenEl = $('chosen');
 let TASKS = [];               // [{id, name, type}]
 let chosenId = defaultId || 0;
 let activeIdx = -1;           // highlighted result row (keyboard nav)
+let dirty = false;            // input is being typed into (search mode), not
+                              // showing a committed selection label
 
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+// The label shown in the input once a task is chosen.
+function labelFor(id) {
+  const t = TASKS.find((x) => x.id === id);
+  return t ? `#${t.id} — ${t.name}` : `#${id}`;
+}
+
+// Small confirmation line under the input.
 function showChosen() {
-  if (!chosenId) { chosenEl.innerHTML = '<span>No task selected yet — search above to pick one.</span>'; return; }
-  const t = TASKS.find((x) => x.id === chosenId);
-  chosenEl.innerHTML = t
-    ? `Logging to: <b>#${t.id}</b> — ${esc(t.name)}`
-    : `Logging to: <b>#${chosenId}</b>`;
+  if (!chosenId) { chosenEl.textContent = ''; return; }
+  chosenEl.innerHTML = `Time will be logged to <b>#${chosenId}</b>.`;
 }
 
 function closeResults() { results.classList.remove('open'); results.innerHTML = ''; activeIdx = -1; }
@@ -52,19 +58,23 @@ function renderResults(list) {
   activeIdx = 0;
 }
 
+// Show matches for the current query — or the FULL list when the query is
+// empty (so focusing the input reveals everything immediately).
 function filter() {
-  const q = search.value.trim().toLowerCase();
-  if (!q) { closeResults(); return; }
-  const list = TASKS.filter((t) =>
-    t.name.toLowerCase().includes(q) || String(t.id).includes(q)).slice(0, 50);
+  const q = dirty ? search.value.trim().toLowerCase() : '';
+  const list = !q
+    ? TASKS.slice(0, 50)
+    : TASKS.filter((t) => t.name.toLowerCase().includes(q) || String(t.id).includes(q)).slice(0, 50);
   renderResults(list);
 }
 
 function choose(id) {
   chosenId = Number(id) || 0;
   closeResults();
-  search.value = '';
+  dirty = false;
+  search.value = labelFor(chosenId);   // show the selection IN the input
   showChosen();
+  search.blur();
 }
 
 if (hasTask) {
@@ -76,12 +86,21 @@ if (hasTask) {
     search.style.display = 'none';
     chosenEl.innerHTML += ' <span class="pill">locked</span>';
   } else {
+    if (chosenId) search.value = labelFor(chosenId);   // may refine once TASKS load
     api.getActiveTasks().then((res) => {
-      if (res && Array.isArray(res.items)) TASKS = res.items;
+      if (res && Array.isArray(res.items)) {
+        TASKS = res.items;
+        if (chosenId && !dirty) search.value = labelFor(chosenId);
+      }
     }).catch(() => {});
 
-    search.addEventListener('input', filter);
-    search.addEventListener('focus', () => { if (search.value.trim()) filter(); });
+    search.addEventListener('input', () => { dirty = true; filter(); });
+    // Focus: reveal the list. Select the current label so typing replaces it.
+    search.addEventListener('focus', () => { dirty = false; search.select(); filter(); });
+    search.addEventListener('blur', () => {
+      // Restore the chosen label if the user focused but didn't pick anything.
+      setTimeout(() => { if (!results.classList.contains('open') && !dirty && chosenId) search.value = labelFor(chosenId); }, 120);
+    });
     search.addEventListener('keydown', (e) => {
       const rows = [...results.querySelectorAll('.result')];
       if (e.key === 'ArrowDown' && rows.length) {
@@ -111,9 +130,10 @@ if (hasTask) {
 input.focus();
 
 function done(skipped) {
-  // If the user typed a raw id in the search box without picking it, honor it.
+  // If the user typed a raw id and didn't pick a row, honor it. Only when the
+  // input is in search mode (dirty) — otherwise it holds the "#id — name" label.
   let id = chosenId;
-  if (hasTask && /^\d+$/.test(search.value.trim())) id = Number(search.value.trim());
+  if (hasTask && dirty && /^\d+$/.test(search.value.trim())) id = Number(search.value.trim());
   api.submit({ description: skipped ? '' : input.value, taskId: id || defaultId, skipped });
 }
 $('save').addEventListener('click', () => done(false));

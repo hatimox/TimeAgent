@@ -48,6 +48,9 @@ function setMeeting(active, startedAt) {
   $('dot').classList.toggle('live', active);
   $('meetActions').style.display = active ? 'flex' : 'none';
   if (active) {
+    // The "In meeting" text lives in the user block; make sure it's visible
+    // even when there's no signed-in user to show.
+    $('user').style.display = 'flex';
     meetingStart = startedAt || Date.now();
     tickMeeting();
     if (!meetingTick) meetingTick = setInterval(tickMeeting, 1000);
