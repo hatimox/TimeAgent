@@ -595,6 +595,23 @@ ipcMain.handle('delete-time', async (_e, { timeId, day, hours, itemName }) => {
   } catch (e) { return { error: e.message }; }
 });
 
+// Active (non-final) Tasks + Bugs for the meeting task picker. Cached briefly
+// so opening the prompt is instant; the meeting flow can't await a long fetch.
+let activeTasksCache = null;   // { at: ms, items: [...] }
+ipcMain.handle('get-active-tasks', async () => {
+  if (!client) return { error: 'not-configured' };
+  const fresh = activeTasksCache && (Date.now() - activeTasksCache.at) < 120000;
+  if (fresh) return { items: activeTasksCache.items };
+  try {
+    const all = await client.fetchAllAssigned({ currentSprintOnly: false });
+    const items = all
+      .filter((it) => !it.isFinal)
+      .map((it) => ({ id: it.id, name: it.name, type: it.displayType }));
+    activeTasksCache = { at: Date.now(), items };
+    return { items };
+  } catch (e) { return { error: e.message }; }
+});
+
 ipcMain.handle('get-user-info', async () => {
   if (!client) return { error: 'not-configured' };
   await ensureUserId();

@@ -291,7 +291,7 @@ function promptText(title, label, opts = {}) {
   const wantTaskId = opts.defaultTaskId != null;
   return new Promise((resolve) => {
     const win = new BrowserWindow({
-      width: 380, height: wantTaskId ? 280 : 200, resizable: false, minimizable: false, maximizable: false,
+      width: 400, height: wantTaskId ? 380 : 200, resizable: false, minimizable: false, maximizable: false,
       title, alwaysOnTop: true,
       icon: path.join(__dirname, 'assets', 'appicon.png'),
       webPreferences: { contextIsolation: true,

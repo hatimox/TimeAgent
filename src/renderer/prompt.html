@@ -8,8 +8,38 @@
   body { padding: 16px; gap: 0; }
   h2 { font-size: 14px; margin: 0 0 4px; }
   p { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-  input { width: 100%; margin-bottom: 14px; }
+  input { width: 100%; margin-bottom: 12px; }
   label.fld { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+
+  /* Searchable task picker */
+  .picker { margin-bottom: 12px; }
+  .pickInput { display: flex; gap: 6px; align-items: center; }
+  .pickInput input { margin-bottom: 0; flex: 1; }
+  .chosen {
+    font-size: 11.5px; color: var(--muted); margin-top: 6px; min-height: 15px;
+  }
+  .chosen b { color: var(--text); }
+  .results {
+    list-style: none; margin: 6px 0 0; padding: 0; max-height: 168px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 8px; display: none; background: var(--surface);
+  }
+  .results.open { display: block; }
+  .results li {
+    padding: 7px 9px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 7px; align-items: baseline;
+  }
+  .results li:last-child { border-bottom: none; }
+  .results li:hover, .results li.active { background: var(--accent-soft); }
+  .results li .tid { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .results li .tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .results li .tbadge {
+    font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #fff;
+    padding: 1px 6px; border-radius: 20px;
+  }
+  .results li .tbadge.bug { background: var(--bug); }
+  .results li .tbadge.task { background: var(--task); }
+  .results .empty { padding: 8px 9px; color: var(--muted); font-size: 11.5px; }
+
   .btns { display: flex; gap: 8px; justify-content: flex-end; }
 </style>
 </head>
@@ -17,10 +47,16 @@
   <h2 id="title">Meeting</h2>
   <p id="label"></p>
   <input id="text" type="text" placeholder="description" autofocus>
-  <div id="taskRow" style="display:none">
-    <label class="fld">Task id (where the time is saved)</label>
-    <input id="taskId" type="number" min="0" step="1">
+
+  <div id="taskRow" class="picker" style="display:none">
+    <label class="fld">Task (where the time is saved)</label>
+    <div class="pickInput">
+      <input id="taskSearch" type="text" placeholder="Search active tasks or type an id…" autocomplete="off">
+    </div>
+    <ul id="results" class="results"></ul>
+    <div id="chosen" class="chosen"></div>
   </div>
+
   <div class="btns">
     <button id="skip">Skip</button>
     <button id="save" class="primary">Save</button>

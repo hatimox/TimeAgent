@@ -93,16 +93,35 @@ button.icon { padding: 5px 8px; }
 .state { color: var(--muted); }
 .state.active { color: var(--green); font-weight: 600; }
 /* Interactive state chip + its inline <select> editor. */
+/* Status chip — pill that reads as a dropdown trigger. A leading dot mirrors
+   the state color (muted = done/final, green = active). */
 button.stateBtn {
-  font: inherit; color: inherit; background: transparent;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: inherit; background: var(--surface-2);
   border: 1px solid var(--border); border-radius: 20px;
-  padding: 1px 8px; cursor: pointer; line-height: 1.5;
+  padding: 2px 9px; cursor: pointer; line-height: 1.6;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: background .12s, border-color .12s;
 }
-button.stateBtn:hover { background: var(--accent-soft); border-color: var(--accent); }
+button.stateBtn::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted); flex: none;
+}
+button.stateBtn.active::before { background: var(--green); }
+button.stateBtn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 select.stateSel {
-  font: inherit; padding: 1px 6px; border-radius: 6px;
-  border: 1px solid var(--accent); background: var(--surface);
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  padding: 3px 26px 3px 10px; border-radius: 20px;
+  border: 1px solid var(--accent); background: var(--surface); color: var(--text);
+  cursor: pointer; outline: none; box-shadow: 0 0 0 3px var(--accent-soft);
+  appearance: none; -webkit-appearance: none;
+  /* chevron */
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: right 12px center, right 7px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
+select.stateSel option { font-weight: 400; }
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); }
 .mine {
   font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px;
