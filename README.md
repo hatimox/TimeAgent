@@ -8,6 +8,18 @@ total always a click away.
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/popover.png" alt="Tray popover with today / week / month totals" width="320">
+</p>
+
+| Task & bug list | Meeting prompt | Settings |
+|:---:|:---:|:---:|
+| ![Task list](docs/screenshots/task-list.png) | ![Meeting prompt](docs/screenshots/meeting-prompt.png) | ![Settings](docs/screenshots/settings.png) |
+
+---
+
 ## Features
 
 ### Time logging

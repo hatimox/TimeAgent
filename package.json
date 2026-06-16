@@ -40,7 +40,12 @@
       "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }, { "target": "zip", "arch": ["x64", "arm64"] }],
       "extraResources": [{ "from": "native/michelper", "to": "michelper" }]
     },
-    "win": { "target": ["nsis"] },
-    "linux": { "target": ["AppImage", "deb"], "category": "Utility" }
+    "win": { "target": ["nsis"], "icon": "build/icon.png" },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "desktop": { "StartupWMClass": "TimeAgent" }
+    }
   }
 }
