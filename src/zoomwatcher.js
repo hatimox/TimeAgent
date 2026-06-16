@@ -177,11 +177,32 @@ class ZoomWatcher {
     return false;
   }
 
+  // Manually end the current meeting segment NOW and let a new one begin while
+  // still in Zoom (e.g. switching breakout rooms). Logs the elapsed segment via
+  // the normal Daily/Other flow; the next poll starts a fresh session if the
+  // mic/process is still active. No-op when not in a meeting.
+  async splitNow() {
+    if (!this.sessionStart || this.busy) return { ok: false, reason: 'no-active-meeting' };
+    const start = this.sessionStart;
+    const end = Date.now();
+    // Clear the session so the next poll opens a brand-new one.
+    this.sessionStart = null; this.lastSeen = null;
+    const durSec = (end - start) / 1000;
+    this.log(`meeting SPLIT dur=${Math.round(durSec)}s`);
+    if (durSec >= this.minSeconds) {
+      await this.handleEnd(new Date(start), new Date(end));
+    } else {
+      this.log('-> split segment too short, skipped');
+    }
+    // Re-evaluate immediately so the new segment's timer starts without delay.
+    this.schedule(0);
+    return { ok: true };
+  }
+
   async poll() {
     if (this.busy) { this.schedule(this.activePollMs); return; }
     let active = false;
     try { active = await this._inMeeting(); } catch (_) {}
-    this.onMeetingState(active);
     const now = Date.now();
     if (active) {
       if (!this.sessionStart) { this.sessionStart = now; this.log('meeting STARTED'); }
@@ -197,6 +218,9 @@ class ZoomWatcher {
       if (durSec >= this.minSeconds) this.handleEnd(new Date(start), new Date(end));
       else this.log('-> too short, skipped');
     }
+    // Report state AFTER updating sessionStart so the displayed timer reflects
+    // the current segment (important when a split begins a fresh session).
+    this.onMeetingState(active, this.sessionStart || 0);
     // Poll faster while in a meeting so we catch the end within a few seconds.
     this.schedule(this.sessionStart ? this.activePollMs : this.idlePollMs);
   }
@@ -229,12 +253,17 @@ class ZoomWatcher {
       if (choice === 2) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
       const isDaily = choice === 0;
 
-      // 2) Description for non-daily
+      // 2) For "Other meeting", prompt for a description AND show the task id
+      // the time saves to (the configured Meetings task), editable per-meeting.
       let desc = '';
-      if (!isDaily) desc = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
-        'What was it about? (used as the time-log description)');
-
-      const taskId = isDaily ? cfg.dailyTaskId : cfg.meetingsTaskId;
+      let taskId = cfg.dailyTaskId;
+      if (!isDaily) {
+        const res = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
+          'What was it about? (used as the time-log description)',
+          { defaultTaskId: cfg.meetingsTaskId || 0 });
+        desc = res.description || '';
+        taskId = res.taskId || cfg.meetingsTaskId;
+      }
       if (!taskId) { this.onStatus('No meeting task id set in Settings'); return; }
       if (!client) { this.onStatus('Not configured — meeting not logged'); return; }
 
@@ -242,7 +271,7 @@ class ZoomWatcher {
         entityId: taskId, hours, description: desc,
         date: start, tzOffsetMinutes: cfg.tzOffsetMinutes,
       });
-      this.onStatus(`Logged ${hours.toFixed(2)}h to ${isDaily ? 'Daily' : 'Meetings'}`);
+      this.onStatus(`Logged ${hours.toFixed(2)}h to ${isDaily ? 'Daily' : `#${taskId}`}`);
       this.log(`logged ${hours}h to ${taskId} (${isDaily ? 'daily' : 'other'})`);
     } catch (e) {
       this.onStatus('Meeting log failed: ' + e.message);
@@ -253,26 +282,34 @@ class ZoomWatcher {
   }
 }
 
-// A small modal text-input window (Electron has no built-in text prompt).
+// A small modal prompt window (Electron has no built-in text prompt). When
+// `defaultTaskId` is given it also shows an editable task-id field (the task
+// the time is saved to) and resolves to { description, taskId, skipped };
+// otherwise it resolves to the plain description string (legacy callers).
 let promptSeq = 0;
-function promptText(title, label) {
+function promptText(title, label, opts = {}) {
+  const wantTaskId = opts.defaultTaskId != null;
   return new Promise((resolve) => {
     const win = new BrowserWindow({
-      width: 380, height: 200, resizable: false, minimizable: false, maximizable: false,
+      width: 380, height: wantTaskId ? 280 : 200, resizable: false, minimizable: false, maximizable: false,
       title, alwaysOnTop: true,
       icon: path.join(__dirname, 'assets', 'appicon.png'),
       webPreferences: { contextIsolation: true,
         preload: path.join(__dirname, 'promptPreload.js') },
     });
     const channel = 'prompt-result-' + (++promptSeq);
-    win.loadFile(path.join(__dirname, 'renderer', 'prompt.html'),
-      { query: { title, label, channel } });
+    const query = { title, label, channel };
+    if (wantTaskId) query.taskId = String(opts.defaultTaskId);
+    win.loadFile(path.join(__dirname, 'renderer', 'prompt.html'), { query });
     const { ipcMain } = require('electron');
     let settled = false;
-    ipcMain.once(channel, (_e, value) => {
-      settled = true; try { win.close(); } catch (_) {} resolve(value || '');
-    });
-    win.on('closed', () => { if (!settled) resolve(''); });
+    const finish = (value) => {
+      settled = true; try { win.close(); } catch (_) {}
+      if (!wantTaskId) { resolve((value && value.description) || ''); return; }
+      resolve(value || { description: '', taskId: opts.defaultTaskId, skipped: true });
+    };
+    ipcMain.once(channel, (_e, value) => finish(value));
+    win.on('closed', () => { if (!settled) finish(null); });
   });
 }
 

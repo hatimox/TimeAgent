@@ -95,7 +95,7 @@ class TPClient {
     if (currentSprintOnly) where += ` and (TeamIteration.IsCurrent eq 'true')`;
     const items = await this._getAllItems(collection, {
       where,
-      include: '[Id,Name,EntityState[Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name]]',
+      include: '[Id,Name,EntityState[Id,Name,IsFinal],Project[Name,Process[Id]],TeamIteration[Name]]',
     });
     return items.map((it) => {
       const es = it.EntityState || {};
@@ -105,6 +105,7 @@ class TPClient {
         name: it.Name,
         entityType: collection,            // "Tasks" | "Bugs"
         displayType: collection === 'Bugs' ? 'Bug' : 'Task',
+        stateId: es.Id || 0,
         stateName: es.Name || '?',
         isFinal: !!es.IsFinal,
         projectName: project.Name || '',
@@ -136,6 +137,36 @@ class TPClient {
       }
     }
     return [...order.keys()].sort((a, b) => (order.get(a) - order.get(b)) || a.localeCompare(b));
+  }
+
+  // --- selectable workflow states for a process, keyed by entity type ---
+  // Returns { Task: [{id,name,isFinal,priority}], Bug: [...] } so the UI can
+  // offer the right state list for each item type (their state IDs differ).
+  async fetchProcessStates(processId) {
+    const out = { Task: [], Bug: [] };
+    if (!processId) return out;
+    for (const etype of ['Task', 'Bug']) {
+      let obj;
+      try {
+        obj = await this._get('EntityStates', {
+          where: `(Process.Id eq ${processId}) and (EntityType.Name eq '${etype}')`,
+          include: '[Id,Name,NumericPriority,IsFinal]',
+          take: '200',
+        });
+      } catch (e) { continue; }
+      out[etype] = (obj.Items || [])
+        .map((s) => ({ id: s.Id, name: s.Name, isFinal: !!s.IsFinal, priority: s.NumericPriority || 0 }))
+        .sort((a, b) => (a.priority - b.priority) || a.name.localeCompare(b.name));
+    }
+    return out;
+  }
+
+  // --- move a Task/Bug to a different workflow state ---
+  // entityType is "Tasks" | "Bugs"; TP enforces any workflow rules server-side.
+  async setEntityState(entityType, entityId, stateId) {
+    const resp = await this._post(`${entityType}/${entityId}`, { EntityState: { Id: stateId } });
+    const es = resp.EntityState || {};
+    return { id: resp.Id, stateName: es.Name || '?', isFinal: !!es.IsFinal };
   }
 
   // --- my time entries, with the TP-assigned calendar day (offset-aware) ---

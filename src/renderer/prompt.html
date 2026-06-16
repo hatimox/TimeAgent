@@ -9,6 +9,7 @@
   h2 { font-size: 14px; margin: 0 0 4px; }
   p { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
   input { width: 100%; margin-bottom: 14px; }
+  label.fld { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
   .btns { display: flex; gap: 8px; justify-content: flex-end; }
 </style>
 </head>
@@ -16,6 +17,10 @@
   <h2 id="title">Meeting</h2>
   <p id="label"></p>
   <input id="text" type="text" placeholder="description" autofocus>
+  <div id="taskRow" style="display:none">
+    <label class="fld">Task id (where the time is saved)</label>
+    <input id="taskId" type="number" min="0" step="1">
+  </div>
   <div class="btns">
     <button id="skip">Skip</button>
     <button id="save" class="primary">Save</button>

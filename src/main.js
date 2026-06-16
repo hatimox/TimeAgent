@@ -204,9 +204,15 @@ function startZoomWatcher() {
     getConfig: () => ({ ...store.asConfig(), tzOffsetMinutes: tzOffset(store.data.timezone) }),
     getClient: () => client,
     dataDir: store.dir,
-    onMeetingState: (active) => {
-      if (active !== inMeeting) {
+    onMeetingState: (active, sessionStart) => {
+      // sessionStart (ms) lets us re-sync the elapsed timer when a meeting is
+      // split into a new segment without the active flag ever going false.
+      const startMs = active && sessionStart ? sessionStart : 0;
+      const sessionChanged = active && startMs &&
+        (!meetingStartedAt || meetingStartedAt.getTime() !== startMs);
+      if (active !== inMeeting || sessionChanged) {
         inMeeting = active;
+        if (sessionChanged) meetingStartedAt = new Date(startMs);  // reset before tray reads it
         setTrayIcon(active);   // swap the menu-bar icon + start/stop the timer
         if (popover && popover.isVisible()) {
           popover.webContents.send('meeting-state', active,
@@ -526,6 +532,39 @@ ipcMain.handle('log-time', async (_e, { entityId, hours, description, dateISO })
   } catch (e) { return { error: e.message }; }
 });
 
+// Selectable workflow states for a process, keyed by entity type. Cached per
+// process so opening many dropdowns doesn't re-hit TP each time.
+const stateCache = new Map();   // processId -> { Task:[...], Bug:[...] }
+ipcMain.handle('get-entity-states', async (_e, processId) => {
+  if (!client) return { error: 'not-configured' };
+  if (!processId) return { Task: [], Bug: [] };
+  if (stateCache.has(processId)) return stateCache.get(processId);
+  try {
+    const states = await client.fetchProcessStates(processId);
+    stateCache.set(processId, states);
+    return states;
+  } catch (e) { return { error: e.message }; }
+});
+
+// Change a Task/Bug state after a native confirmation dialog. The renderer
+// passes the human-readable names so the prompt is meaningful.
+ipcMain.handle('set-entity-state', async (_e, { entityType, entityId, stateId, fromName, toName, itemName }) => {
+  if (!client) return { error: 'not-configured' };
+  const kind = entityType === 'Bugs' ? 'Bug' : 'Task';
+  const r = dialog.showMessageBoxSync({
+    type: 'question',
+    message: `Change ${kind} #${entityId} status?`,
+    detail: `“${itemName || entityId}”\n\n${fromName || '?'}  →  ${toName || '?'}`,
+    buttons: ['Change', 'Cancel'],
+    defaultId: 0, cancelId: 1, noLink: true,
+  });
+  if (r !== 0) return { cancelled: true };
+  try {
+    const res = await client.setEntityState(entityType, entityId, stateId);
+    return { ok: true, stateName: res.stateName, isFinal: res.isFinal };
+  } catch (e) { return { error: e.message }; }
+});
+
 ipcMain.handle('get-user-info', async () => {
   if (!client) return { error: 'not-configured' };
   await ensureUserId();
@@ -555,6 +594,12 @@ ipcMain.handle('get-morocco-holidays', (_e, year) => ({
 ipcMain.handle('get-meeting-state', () => ({
   active: inMeeting, startedAt: meetingStartedAt ? meetingStartedAt.getTime() : 0,
 }));
+// End the current meeting segment and start a fresh one (breakout-room switch)
+// without leaving Zoom. Logs the elapsed segment via the usual prompt.
+ipcMain.handle('split-meeting', async () => {
+  if (!zoomWatcher) return { ok: false, reason: 'not-running' };
+  return zoomWatcher.splitNow();
+});
 
 // ---- helpers ----
 function dominantProcessId(items) {

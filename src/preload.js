@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('api', {
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   loadData: (opts) => ipcRenderer.invoke('load-data', opts),
   getUserInfo: () => ipcRenderer.invoke('get-user-info'),
+  getEntityStates: (processId) => ipcRenderer.invoke('get-entity-states', processId),
+  setEntityState: (p) => ipcRenderer.invoke('set-entity-state', p),
   logTime: (p) => ipcRenderer.invoke('log-time', p),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openSettings: () => ipcRenderer.invoke('open-settings-window'),
@@ -19,5 +21,6 @@ contextBridge.exposeInMainWorld('api', {
   onMeetingState: (cb) => ipcRenderer.on('meeting-state', (_e, active, startedAt) => cb(active, startedAt)),
   getVersion: () => ipcRenderer.invoke('get-version'),
   getMeetingState: () => ipcRenderer.invoke('get-meeting-state'),
+  splitMeeting: () => ipcRenderer.invoke('split-meeting'),
   getMoroccoHolidays: (year) => ipcRenderer.invoke('get-morocco-holidays', year),
 });

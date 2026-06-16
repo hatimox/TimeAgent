@@ -46,6 +46,7 @@ window.api.onTotalsUpdated(() => refresh());
 let meetingStart = 0, meetingTick = null;
 function setMeeting(active, startedAt) {
   $('dot').classList.toggle('live', active);
+  $('split').style.display = active ? 'block' : 'none';
   if (active) {
     meetingStart = startedAt || Date.now();
     tickMeeting();
@@ -55,6 +56,13 @@ function setMeeting(active, startedAt) {
     if (meetingTick) { clearInterval(meetingTick); meetingTick = null; }
   }
 }
+
+$('split').addEventListener('click', async () => {
+  $('split').disabled = true;
+  const res = await window.api.splitMeeting();
+  $('split').disabled = false;
+  if (!res || !res.ok) $('status').textContent = 'No active meeting to split';
+});
 function tickMeeting() {
   const s = Math.floor((Date.now() - meetingStart) / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;

@@ -92,6 +92,17 @@ button.icon { padding: 5px 8px; }
 .meta a:hover { text-decoration: underline; }
 .state { color: var(--muted); }
 .state.active { color: var(--green); font-weight: 600; }
+/* Interactive state chip + its inline <select> editor. */
+button.stateBtn {
+  font: inherit; color: inherit; background: transparent;
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 1px 8px; cursor: pointer; line-height: 1.5;
+}
+button.stateBtn:hover { background: var(--accent-soft); border-color: var(--accent); }
+select.stateSel {
+  font: inherit; padding: 1px 6px; border-radius: 6px;
+  border: 1px solid var(--accent); background: var(--surface);
+}
 .pill { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); }
 .mine {
   font-variant-numeric: tabular-nums; font-weight: 700; font-size: 12px;

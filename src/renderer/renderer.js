@@ -140,7 +140,7 @@ function render() {
           <div class="meta">
             <span class="badge ${cls}">${it.displayType}</span>
             <a href="#" data-tp="${it.id}">#${it.id} ↗</a>
-            <span class="state ${it.isFinal ? '' : 'active'}">${esc(it.stateName)}</span>
+            <button type="button" class="state stateBtn ${it.isFinal ? '' : 'active'}" data-state-id="${it.id}" title="Click to change status">${esc(it.stateName)} ▾</button>
             <span>${esc(it.projectName)}</span> ${sprint}
           </div>
         </div>
@@ -157,6 +157,71 @@ function render() {
   }).join('');
 }
 
+// Swap a state chip for a <select> of that item's process states, then confirm
+// + apply the chosen change (the confirmation dialog lives in the main process).
+let stateEditorOpen = null;   // the <select> currently shown, if any
+async function openStateEditor(btn) {
+  if (stateEditorOpen) return;            // one at a time
+  const id = Number(btn.dataset.stateId);
+  const it = ITEMS.find((x) => x.id === id);
+  if (!it) return;
+
+  const prev = btn.textContent;
+  btn.textContent = '…'; btn.disabled = true;
+  const all = await window.api.getEntityStates(it.processId);
+  btn.disabled = false; btn.textContent = prev;
+  if (!all || all.error) { $('status').textContent = 'Could not load states' + (all && all.error ? ': ' + all.error : ''); return; }
+  const states = (it.entityType === 'Bugs' ? all.Bug : all.Task) || [];
+  if (!states.length) { $('status').textContent = 'No states available for this item'; return; }
+
+  const sel = document.createElement('select');
+  sel.className = 'state stateSel';
+  sel.innerHTML = states.map((s) =>
+    `<option value="${s.id}" ${s.id === it.stateId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+  btn.replaceWith(sel);
+  stateEditorOpen = sel;
+  sel.focus();
+
+  let applying = false;     // suppress blur-restore while a change is in flight
+  const restore = () => {
+    const cur = ITEMS.find((x) => x.id === id) || it;
+    const fresh = document.createElement('button');
+    fresh.type = 'button';
+    fresh.className = `state stateBtn ${cur.isFinal ? '' : 'active'}`;
+    fresh.dataset.stateId = String(id);
+    fresh.title = 'Click to change status';
+    fresh.textContent = `${cur.stateName} ▾`;
+    sel.replaceWith(fresh);
+    stateEditorOpen = null;
+  };
+
+  sel.addEventListener('change', async () => {
+    const stateId = Number(sel.value);
+    const target = states.find((s) => s.id === stateId);
+    if (!target || stateId === it.stateId) { restore(); return; }
+    applying = true;
+    sel.disabled = true; $('status').textContent = 'Changing status…';
+    const res = await window.api.setEntityState({
+      entityType: it.entityType, entityId: id, stateId,
+      fromName: it.stateName, toName: target.name, itemName: it.name,
+    });
+    applying = false;
+    if (res && res.ok) {
+      it.stateId = stateId; it.stateName = res.stateName; it.isFinal = res.isFinal;
+      $('status').textContent = `#${id} → ${res.stateName}`;
+      stateEditorOpen = null;   // render() rebuilds the list, detaching sel
+      render();   // re-render so "active only" / state filter reflect the change
+    } else {
+      if (res && res.error) $('status').textContent = 'Status change failed: ' + res.error;
+      else $('status').textContent = 'Status change cancelled';
+      restore();
+    }
+  });
+  // Abandon the editor if it loses focus without a change (but not while the
+  // confirmation dialog has stolen focus mid-apply).
+  sel.addEventListener('blur', () => { if (stateEditorOpen === sel && !applying) restore(); });
+}
+
 // Event delegation for the list (TP links + timer + log buttons).
 $('list').addEventListener('click', async (e) => {
   const tp = e.target.closest('a[data-tp]');
@@ -169,6 +234,9 @@ $('list').addEventListener('click', async (e) => {
     else { const it = ITEMS.find((x) => x.id === id); startTimer(id, it ? it.name : `#${id}`); }
     return;
   }
+
+  const stateBtn = e.target.closest('.stateBtn');
+  if (stateBtn) { await openStateEditor(stateBtn); return; }
 
   const btn = e.target.closest('.logBtn');
   if (btn) {

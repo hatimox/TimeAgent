@@ -7,5 +7,6 @@ const channel = params.get('channel');
 contextBridge.exposeInMainWorld('promptApi', {
   title: params.get('title') || 'Meeting',
   label: params.get('label') || '',
+  taskId: params.get('taskId'),            // null unless a task-id field is wanted
   submit: (value) => ipcRenderer.send(channel, value),
 });
