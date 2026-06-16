@@ -242,37 +242,68 @@ class ZoomWatcher {
       const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       const win = `${hhmm(start)}-${hhmm(end)}`;
 
-      // 1) Daily / Other / Cancel
+      // 1) Daily / Defined list / Search / Cancel
+      const dynamicMeetings = cfg.dynamicMeetings || [];
+      const hasDynamic = dynamicMeetings.length > 0;
       const choice = dialog.showMessageBoxSync({
         type: 'question',
-        message: `Zoom meeting ended (${win}, ${hours.toFixed(2)}h)`,
+        message: `Meeting ended (${win}, ${hours.toFixed(2)}h)`,
         detail: 'How should this be logged?',
-        buttons: ['Daily meeting', 'Other meeting', 'Cancel'],
-        defaultId: 0, cancelId: 2, noLink: true,
+        buttons: ['Daily', 'Defined list', 'Search', 'Cancel'],
+        defaultId: 0, cancelId: 3, noLink: true,
       });
-      if (choice === 2) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
-      const isDaily = choice === 0;
+      if (choice === 3) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
 
-      // 2) For "Other meeting", prompt for a description AND show the task id
-      // the time saves to (the configured Meetings task), editable per-meeting.
-      let desc = '';
-      let taskId = cfg.dailyTaskId;
-      if (!isDaily) {
+      // Helper used by all three logging paths.
+      const logToTask = async (taskId, description, label) => {
+        if (!taskId) { this.onStatus('No meeting task id set in Settings'); return; }
+        if (!client) { this.onStatus('Not configured — meeting not logged'); return; }
+        await client.logTime({
+          entityId: taskId, hours, description,
+          date: start, tzOffsetMinutes: cfg.tzOffsetMinutes,
+        });
+        this.onStatus(`Logged ${hours.toFixed(2)}h to ${label}`);
+        this.log(`logged ${hours}h to ${taskId} (${label})`);
+      };
+
+      if (choice === 0) {
+        // Daily
+        await logToTask(cfg.dailyTaskId, '', 'Daily');
+        return;
+      }
+
+      if (choice === 2) {
+        // Search: existing description + task-search prompt. Save logs the
+        // meeting; Skip (or closing the prompt) discards it entirely.
         const res = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
           'What was it about? (used as the time-log description)',
           { defaultTaskId: cfg.meetingsTaskId || 0 });
-        desc = res.description || '';
-        taskId = res.taskId || cfg.meetingsTaskId;
+        if (res.skipped) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
+        const taskId = res.taskId || cfg.meetingsTaskId;
+        await logToTask(taskId, res.description || '', `#${taskId}`);
+        return;
       }
-      if (!taskId) { this.onStatus('No meeting task id set in Settings'); return; }
-      if (!client) { this.onStatus('Not configured — meeting not logged'); return; }
 
-      await client.logTime({
-        entityId: taskId, hours, description: desc,
-        date: start, tzOffsetMinutes: cfg.tzOffsetMinutes,
-      });
-      this.onStatus(`Logged ${hours.toFixed(2)}h to ${isDaily ? 'Daily' : `#${taskId}`}`);
-      this.log(`logged ${hours}h to ${taskId} (${isDaily ? 'daily' : 'other'})`);
+      // choice === 1: Defined list
+      if (!hasDynamic) {
+        dialog.showMessageBoxSync({
+          type: 'info',
+          message: 'No dynamic meetings configured',
+          detail: 'Add them in Settings → Meetings.',
+          buttons: ['OK'],
+          defaultId: 0, noLink: true,
+        });
+        this.onStatus(`Meeting ${win} ignored — no dynamic meetings`);
+        return;
+      }
+      const picked = await pickDynamicMeeting(dynamicMeetings);
+      if (!picked) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
+      // Save logs the meeting; Skip (or closing the prompt) discards it.
+      const res = await promptText(`${picked.name} — ${hours.toFixed(2)}h`,
+        'Description (editable)',
+        { defaultTaskId: picked.taskId, defaultDescription: picked.description, readOnlyTask: true });
+      if (res.skipped) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
+      await logToTask(picked.taskId, res.description || '', `${picked.name} (#${picked.taskId})`);
     } catch (e) {
       this.onStatus('Meeting log failed: ' + e.message);
       this.log('ERROR ' + e.message);
@@ -282,16 +313,23 @@ class ZoomWatcher {
   }
 }
 
+// Pick a dynamic meeting from the configured list. Returns a meeting object
+// or null if the user cancels. The real implementation is assigned below once
+// module-scoped helpers are available.
+let pickDynamicMeeting = async () => null;
+
 // A small modal prompt window (Electron has no built-in text prompt). When
 // `defaultTaskId` is given it also shows an editable task-id field (the task
 // the time is saved to) and resolves to { description, taskId, skipped };
 // otherwise it resolves to the plain description string (legacy callers).
 let promptSeq = 0;
+let dynamicSeq = 0;
 function promptText(title, label, opts = {}) {
   const wantTaskId = opts.defaultTaskId != null;
+  const readOnlyTask = !!opts.readOnlyTask;
   return new Promise((resolve) => {
     const win = new BrowserWindow({
-      width: 400, height: wantTaskId ? 380 : 200, resizable: false, minimizable: false, maximizable: false,
+      width: 400, height: wantTaskId ? (readOnlyTask ? 260 : 380) : 200, resizable: false, minimizable: false, maximizable: false,
       title, alwaysOnTop: true,
       icon: path.join(__dirname, 'assets', 'appicon.png'),
       webPreferences: { contextIsolation: true,
@@ -300,6 +338,8 @@ function promptText(title, label, opts = {}) {
     const channel = 'prompt-result-' + (++promptSeq);
     const query = { title, label, channel };
     if (wantTaskId) query.taskId = String(opts.defaultTaskId);
+    if (opts.defaultDescription) query.defaultDescription = opts.defaultDescription;
+    if (readOnlyTask) query.readOnlyTask = 'true';
     win.loadFile(path.join(__dirname, 'renderer', 'prompt.html'), { query });
     const { ipcMain } = require('electron');
     let settled = false;
@@ -312,5 +352,32 @@ function promptText(title, label, opts = {}) {
     win.on('closed', () => { if (!settled) finish(null); });
   });
 }
+
+// Real implementation: open a small modal window listing the configured dynamic
+// meetings and return the one the user selects.
+pickDynamicMeeting = async (meetings) => {
+  return new Promise((resolve) => {
+    const win = new BrowserWindow({
+      width: 360, height: 380, resizable: false, minimizable: false, maximizable: false,
+      title: 'Select meeting', alwaysOnTop: true,
+      icon: path.join(__dirname, 'assets', 'appicon.png'),
+      webPreferences: {
+        contextIsolation: true,
+        preload: path.join(__dirname, 'dynamicPickerPreload.js'),
+      },
+    });
+    const channel = 'dynamic-result-' + (++dynamicSeq);
+    const query = { channel, meetings: JSON.stringify(meetings) };
+    win.loadFile(path.join(__dirname, 'renderer', 'dynamic-picker.html'), { query });
+    let settled = false;
+    const finish = (value) => {
+      settled = true; try { win.close(); } catch (_) {}
+      resolve(value || null);
+    };
+    const { ipcMain } = require('electron');
+    ipcMain.once(channel, (_e, value) => finish(value));
+    win.on('closed', () => { if (!settled) finish(null); });
+  });
+};
 
 module.exports = { ZoomWatcher };

@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('promptApi', {
   title: params.get('title') || 'Meeting',
   label: params.get('label') || '',
   taskId: params.get('taskId'),            // null unless a task-id field is wanted
+  defaultDescription: params.get('defaultDescription') || '',
+  readOnlyTask: params.get('readOnlyTask') === 'true',
   getActiveTasks: () => ipcRenderer.invoke('get-active-tasks'),
   submit: (value) => ipcRenderer.send(channel, value),
 });

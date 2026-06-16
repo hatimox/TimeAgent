@@ -39,6 +39,9 @@ const DEFAULTS = () => ({
   // Religious holidays as slot-keyed objects so user edits persist across reloads:
   //   { key: "2026|Eid al-Adha|0", date: "2026-05-28", on: true }
   religiousSlots: [],
+  // User-defined meeting shortcuts for the end-of-meeting picker.
+  //   { id: string, name: string, taskId: number, description: string }
+  dynamicMeetings: [],
   // token is NOT stored here; it lives in keytar (or token.secret fallback)
 });
 
@@ -126,6 +129,7 @@ class SettingsStore {
       weeklyOff: this.data.weeklyOff,
       region: this.data.region,
       religiousSlots: this.data.religiousSlots,
+      dynamicMeetings: this.data.dynamicMeetings || [],
       // Flat list of enabled religious dates, for the day-off check in main.
       religiousDays: (this.data.religiousSlots || []).filter((s) => s.on).map((s) => s.date),
     };

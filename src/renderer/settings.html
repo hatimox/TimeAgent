@@ -43,6 +43,13 @@
         <div class="field"><label>Extra meeting processes</label><input id="meetingProcs" type="text" placeholder="e.g. Teams process name"></div>
         <div class="hint">Zoom is detected automatically. To also detect <b>Microsoft Teams</b> (or another app), add the process that runs only during its meeting — find it with the probe script (zoom-teams-probe). Comma/space separated. These ADD to the built-in Zoom detection.</div>
       </fieldset>
+
+      <fieldset>
+        <legend>Dynamic meeting lists</legend>
+        <div class="hint">Shown in the end-of-meeting picker under “Defined list”.</div>
+        <div id="dynamicList"></div>
+        <button id="addDynamic" style="margin-top:8px">+ Add meeting</button>
+      </fieldset>
     </section>
 
     <!-- Recurring -->
