@@ -1,6 +1,6 @@
 {
   "name": "timeagent",
-  "version": "0.0.14",
+  "version": "0.0.1",
   "description": "Log meeting and task time to TargetProcess — cross-platform tray app",
   "main": "src/main.js",
   "scripts": {
