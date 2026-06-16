@@ -130,7 +130,9 @@ function render() {
     const cls = it.entityType === 'Bugs' ? 'bug' : 'task';
     const accent = cls === 'bug' ? 'var(--bug)' : 'var(--task)';
     const mine = myHours(it.id);
-    const mineHtml = mine > 0 ? `<span class="mine">${fmtH(mine)}</span>` : '';
+    const mineHtml = mine > 0
+      ? `<button type="button" class="mine mineBtn" data-mine-id="${it.id}" title="Click to view / edit time entries">${fmtH(mine)} ▾</button>`
+      : '';
     const sprint = it.sprint ? `<span class="pill">${esc(it.sprint)}</span>` : '';
     return `<div class="row" data-id="${it.id}">
       <div class="top">
@@ -153,6 +155,7 @@ function render() {
         <input type="text" placeholder="optional note" class="note">
         <button class="logBtn primary">Log</button>
       </div>
+      <div class="slots" data-slots-id="${it.id}" style="display:none"></div>
     </div>`;
   }).join('');
 }
@@ -222,6 +225,77 @@ async function openStateEditor(btn) {
   sel.addEventListener('blur', () => { if (stateEditorOpen === sel && !applying) restore(); });
 }
 
+// ---- editable per-task time breakdown ----
+// Show/hide the slots panel under a row; lists each TP Time entry for the task
+// (date, hours, description) with edit + delete, plus the total.
+function toggleSlots(itemId) {
+  const panel = document.querySelector(`.slots[data-slots-id="${itemId}"]`);
+  if (!panel) return;
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  renderSlots(itemId, panel);
+  panel.style.display = 'block';
+}
+
+function renderSlots(itemId, panel) {
+  const slots = TIMES.filter((t) => t.itemId === itemId)
+    .sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));   // newest first
+  const total = slots.reduce((s, t) => s + t.hours, 0);
+  if (!slots.length) { panel.innerHTML = `<div class="slotEmpty">No time entries.</div>`; return; }
+  panel.innerHTML = `
+    <div class="slotHead"><span>Time entries</span><span class="slotTotal">Total ${fmtH(total)}</span></div>
+    ${slots.map((t) => `
+      <div class="slot" data-time-id="${t.id}">
+        <input type="date" class="sDate" value="${esc(t.day)}">
+        <input type="number" step="0.25" min="0" class="sHrs" value="${t.hours}">
+        <input type="text" class="sNote" placeholder="note" value="${esc(t.description)}">
+        <button type="button" class="slotAct sSave primary" data-act="save" data-time-id="${t.id}">Save</button>
+        <button type="button" class="slotAct sDel" data-act="delete" data-time-id="${t.id}">✕</button>
+      </div>`).join('')}`;
+}
+
+async function handleSlotAction(btn) {
+  const timeId = Number(btn.dataset.timeId);
+  const slot = btn.closest('.slot');
+  const row = btn.closest('.row');
+  const itemId = Number(row.dataset.id);
+  const act = btn.dataset.act;
+
+  if (act === 'delete') {
+    const it = ITEMS.find((x) => x.id === itemId);
+    const hours = parseFloat(slot.querySelector('.sHrs').value.replace(',', '.'));
+    const day = slot.querySelector('.sDate').value;
+    slot.querySelectorAll('button,input').forEach((el) => (el.disabled = true));
+    const res = await window.api.deleteTime({ timeId, day, hours, itemName: it ? it.name : '' });
+    if (res.cancelled) { slot.querySelectorAll('button,input').forEach((el) => (el.disabled = false)); return; }
+    if (res.error) { $('status').textContent = 'Delete failed: ' + res.error; slot.querySelectorAll('button,input').forEach((el) => (el.disabled = false)); return; }
+    $('status').textContent = 'Time entry deleted';
+    await reloadKeepingSlot(itemId);
+    return;
+  }
+
+  // save
+  const hours = parseFloat(slot.querySelector('.sHrs').value.replace(',', '.'));
+  const date = slot.querySelector('.sDate').value;
+  const note = slot.querySelector('.sNote').value;
+  if (!(hours > 0)) { $('status').textContent = 'Hours must be > 0'; return; }
+  slot.querySelectorAll('button,input').forEach((el) => (el.disabled = true));
+  $('status').textContent = 'Saving…';
+  const res = await window.api.updateTime({ timeId, hours, description: note, dateISO: date + 'T12:00:00' });
+  if (res.error) { $('status').textContent = 'Save failed: ' + res.error; slot.querySelectorAll('button,input').forEach((el) => (el.disabled = false)); return; }
+  $('status').textContent = 'Time entry updated';
+  await reloadKeepingSlot(itemId);
+}
+
+// Reload data, then re-open the same task's slot panel so the edit context stays.
+async function reloadKeepingSlot(itemId) {
+  await load();
+  // Re-open the panel only if the task still has time entries (otherwise the
+  // ▾ toggle is gone and an empty panel would dangle).
+  if (myHours(itemId) <= 0) return;
+  const panel = document.querySelector(`.slots[data-slots-id="${itemId}"]`);
+  if (panel) { renderSlots(itemId, panel); panel.style.display = 'block'; }
+}
+
 // Event delegation for the list (TP links + timer + log buttons).
 $('list').addEventListener('click', async (e) => {
   const tp = e.target.closest('a[data-tp]');
@@ -237,6 +311,13 @@ $('list').addEventListener('click', async (e) => {
 
   const stateBtn = e.target.closest('.stateBtn');
   if (stateBtn) { await openStateEditor(stateBtn); return; }
+
+  const mineBtn = e.target.closest('.mineBtn');
+  if (mineBtn) { toggleSlots(Number(mineBtn.dataset.mineId)); return; }
+
+  // Edit/save/delete within an open time-slots panel.
+  const slotAct = e.target.closest('.slotAct');
+  if (slotAct) { await handleSlotAction(slotAct); return; }
 
   const btn = e.target.closest('.logBtn');
   if (btn) {

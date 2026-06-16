@@ -173,16 +173,42 @@ class TPClient {
   async fetchMyTimes() {
     const items = await this._getAllItems('Times', {
       where: `User.Id eq ${this.myUserId}`,
-      include: '[Spent,Date,Assignable[Id]]',
+      include: '[Id,Spent,Date,Description,Assignable[Id]]',
     });
     const out = [];
     for (const t of items) {
       const itemId = (t.Assignable || {}).Id || 0;
       const hours = Number(t.Spent) || 0;
       const day = TPClient.tpDay(t.Date);
-      if (day) out.push({ itemId, hours, day });
+      if (day) out.push({ id: t.Id, itemId, hours, day, description: t.Description || '' });
     }
     return out;
+  }
+
+  // --- edit / delete an individual Time entry ---
+  // Updates Spent/Description, and (if `date` given) re-anchors the day exactly
+  // like logTime so an edit can move a slot to a different calendar day.
+  async updateTime(timeId, { hours, description, date, tzOffsetMinutes }) {
+    const body = {};
+    if (hours != null) body.Spent = hours;
+    if (description != null) body.Description = description;
+    if (date) {
+      const off = tzOffsetMinutes == null ? -date.getTimezoneOffset() : tzOffsetMinutes;
+      const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+      const ms = Date.UTC(y, m, d, 12, 0, 0) - off * 60000;
+      const sign = off >= 0 ? '+' : '-';
+      const ao = Math.abs(off);
+      const offStr = `${sign}${String(Math.floor(ao / 60)).padStart(2, '0')}${String(ao % 60).padStart(2, '0')}`;
+      body.Date = `/Date(${ms}${offStr})/`;
+    }
+    const resp = await this._post(`Times/${timeId}`, body);
+    if (resp.Id == null) throw new Error(`Time entry not updated: ${JSON.stringify(resp).slice(0, 200)}`);
+    return resp.Id;
+  }
+
+  async deleteTime(timeId) {
+    await this._request('DELETE', this._url(`Times/${timeId}`));
+    return true;
   }
 
   // --- log a real Time entry (noon-anchored to the intended day) ---

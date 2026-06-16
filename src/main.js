@@ -565,6 +565,36 @@ ipcMain.handle('set-entity-state', async (_e, { entityType, entityId, stateId, f
   } catch (e) { return { error: e.message }; }
 });
 
+ipcMain.handle('update-time', async (_e, { timeId, hours, description, dateISO }) => {
+  if (!client) return { error: 'not-configured' };
+  try {
+    const date = dateISO ? new Date(dateISO) : null;
+    await client.updateTime(timeId, {
+      hours, description,
+      date, tzOffsetMinutes: date ? tzOffset(store.data.timezone) : null,
+    });
+    updateTotals();
+    return { ok: true };
+  } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle('delete-time', async (_e, { timeId, day, hours, itemName }) => {
+  if (!client) return { error: 'not-configured' };
+  const r = dialog.showMessageBoxSync({
+    type: 'warning',
+    message: 'Delete this time entry?',
+    detail: `${itemName ? `“${itemName}”\n\n` : ''}${day || ''}  ·  ${hours != null ? hours + 'h' : ''}`,
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1, cancelId: 1, noLink: true,
+  });
+  if (r !== 0) return { cancelled: true };
+  try {
+    await client.deleteTime(timeId);
+    updateTotals();
+    return { ok: true };
+  } catch (e) { return { error: e.message }; }
+});
+
 ipcMain.handle('get-user-info', async () => {
   if (!client) return { error: 'not-configured' };
   await ensureUserId();

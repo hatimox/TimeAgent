@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('api', {
   getEntityStates: (processId) => ipcRenderer.invoke('get-entity-states', processId),
   setEntityState: (p) => ipcRenderer.invoke('set-entity-state', p),
   logTime: (p) => ipcRenderer.invoke('log-time', p),
+  updateTime: (p) => ipcRenderer.invoke('update-time', p),
+  deleteTime: (p) => ipcRenderer.invoke('delete-time', p),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   openSettings: () => ipcRenderer.invoke('open-settings-window'),
   // popover
