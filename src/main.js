@@ -210,10 +210,12 @@ function startZoomWatcher() {
       const startMs = active && sessionStart ? sessionStart : 0;
       const sessionChanged = active && startMs &&
         (!meetingStartedAt || meetingStartedAt.getTime() !== startMs);
-      if (active !== inMeeting || sessionChanged) {
+      const flipped = active !== inMeeting;
+      if (flipped || sessionChanged) {
         inMeeting = active;
         if (sessionChanged) meetingStartedAt = new Date(startMs);  // reset before tray reads it
         setTrayIcon(active);   // swap the menu-bar icon + start/stop the timer
+        if (flipped) refreshTrayMenu();   // show/hide the Split item (Linux menu)
         if (popover && popover.isVisible()) {
           popover.webContents.send('meeting-state', active,
             active && meetingStartedAt ? meetingStartedAt.getTime() : 0);
@@ -366,27 +368,48 @@ function buildTray() {
   require('electron').nativeTheme.on('updated', () => {
     if (tray && !inMeeting) tray.setImage(normalTrayIcon());
   });
-  const menuItems = () => [
+  if (process.platform === 'linux') {
+    // Ubuntu/GNOME trays are AppIndicators: they never emit click events, so
+    // a static context menu (opened by any mouse button) is the only way in.
+    // Rebuilt on meeting state changes so "Split meeting" appears during calls.
+    refreshTrayMenu();
+  } else {
+    tray.on('click', (_e, bounds) => togglePopover(bounds));
+    // Right-click still gives a minimal menu (incl. Split during a meeting).
+    tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate(trayMenuTemplate())));
+  }
+}
+
+// Tray menu contents. Includes meeting-only actions (Split) when in a call so
+// the feature is reachable on every platform — Linux especially, where the
+// popover isn't click-accessible.
+function trayMenuTemplate() {
+  const items = [];
+  if (process.platform === 'linux') {
+    items.push({ label: 'Totals…', click: () => togglePopover(null) }, { type: 'separator' });
+  }
+  if (inMeeting) {
+    items.push(
+      { label: '⏹▶ Split meeting (log & start new)', click: () => zoomWatcher && zoomWatcher.splitNow() },
+      { type: 'separator' },
+    );
+  }
+  items.push(
     { label: 'Open tasks…', click: createMainWindow },
     { label: 'Settings…', click: createSettingsWindow },
     { label: 'Check for updates…', click: checkForUpdatesManual },
     { type: 'separator' },
     { label: `Version ${app.getVersion()}`, enabled: false },
     { label: 'Quit', click: () => app.quit() },
-  ];
-  if (process.platform === 'linux') {
-    // Ubuntu/GNOME trays are AppIndicators: they never emit click events, so
-    // a static context menu (opened by any mouse button) is the only way in.
-    tray.setContextMenu(Menu.buildFromTemplate([
-      { label: 'Totals…', click: () => togglePopover(null) },
-      { type: 'separator' },
-      ...menuItems(),
-    ]));
-  } else {
-    tray.on('click', (_e, bounds) => togglePopover(bounds));
-    // Right-click still gives a minimal menu (quit etc).
-    tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate(menuItems())));
-  }
+  );
+  return items;
+}
+
+// Linux uses a persistent context menu, so rebuild it whenever the meeting
+// state flips. (On mac/Windows the right-click menu is built fresh each open.)
+function refreshTrayMenu() {
+  if (!tray || process.platform !== 'linux') return;
+  tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate()));
 }
 
 function createPopover() {

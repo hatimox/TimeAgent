@@ -21,11 +21,11 @@ let activeIdx = -1;           // highlighted result row (keyboard nav)
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function showChosen() {
-  if (!chosenId) { chosenEl.innerHTML = '<span>No task selected</span>'; return; }
+  if (!chosenId) { chosenEl.innerHTML = '<span>No task selected yet — search above to pick one.</span>'; return; }
   const t = TASKS.find((x) => x.id === chosenId);
   chosenEl.innerHTML = t
-    ? `Selected: <b>#${t.id}</b> — ${esc(t.name)}`
-    : `Selected: <b>#${chosenId}</b>`;
+    ? `Logging to: <b>#${t.id}</b> — ${esc(t.name)}`
+    : `Logging to: <b>#${chosenId}</b>`;
 }
 
 function closeResults() { results.classList.remove('open'); results.innerHTML = ''; activeIdx = -1; }
@@ -35,7 +35,7 @@ function renderResults(list) {
     const q = search.value.trim();
     const asId = /^\d+$/.test(q);
     results.innerHTML = asId
-      ? `<li class="result" data-id="${q}"><span class="tid">#${q}</span><span class="tname">Use task id ${q}</span></li>`
+      ? `<li class="result" data-id="${q}"><span class="tid">#${q}</span><span class="tname">Use task #${q} directly</span></li>`
       : `<div class="empty">No matching active tasks.</div>`;
     results.classList.add('open');
     activeIdx = asId ? 0 : -1;
