@@ -273,12 +273,12 @@ class ZoomWatcher {
       }
 
       if (choice === 2) {
-        // Search: existing description + task-search prompt. "Skip" still logs
-        // (with no description) — the user already chose to log by picking
-        // Search; only the top-level "Cancel" button discards the meeting.
+        // Search: existing description + task-search prompt. Save logs the
+        // meeting; Skip (or closing the prompt) discards it entirely.
         const res = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
           'What was it about? (used as the time-log description)',
           { defaultTaskId: cfg.meetingsTaskId || 0 });
+        if (res.skipped) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
         const taskId = res.taskId || cfg.meetingsTaskId;
         await logToTask(taskId, res.description || '', `#${taskId}`);
         return;
@@ -298,13 +298,12 @@ class ZoomWatcher {
       }
       const picked = await pickDynamicMeeting(dynamicMeetings);
       if (!picked) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
-      // The user already picked a meeting; "Skip" on the description prompt
-      // logs with the meeting's default description rather than discarding.
+      // Save logs the meeting; Skip (or closing the prompt) discards it.
       const res = await promptText(`${picked.name} — ${hours.toFixed(2)}h`,
         'Description (editable)',
         { defaultTaskId: picked.taskId, defaultDescription: picked.description, readOnlyTask: true });
-      const desc = res.skipped ? (picked.description || '') : (res.description || '');
-      await logToTask(picked.taskId, desc, `${picked.name} (#${picked.taskId})`);
+      if (res.skipped) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
+      await logToTask(picked.taskId, res.description || '', `${picked.name} (#${picked.taskId})`);
     } catch (e) {
       this.onStatus('Meeting log failed: ' + e.message);
       this.log('ERROR ' + e.message);
