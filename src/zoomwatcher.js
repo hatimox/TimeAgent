@@ -227,38 +227,45 @@ class ZoomWatcher {
 
   async poll() {
     if (this.busy) { this.schedule(this.activePollMs); return; }
-    let active = false;
-    try { active = await this._inMeeting(); } catch (_) {}
-    const now = Date.now();
-    // "Stop tracking" suppresses the current call until the mic goes idle, so a
-    // poll doesn't immediately re-open a session while you're still in Zoom.
-    if (this.suppressed) {
-      if (!active) { this.suppressed = false; this.log('tracking resumed (mic idle)'); }
-      else {
-        this.onMeetingState(false, 0);
-        this.schedule(this.activePollMs);
-        return;
+    // Everything is wrapped so a single throw (e.g. in onMeetingState's tray /
+    // window calls) can NEVER kill the polling loop — the finally always
+    // reschedules. A stalled loop was leaving the meeting UI stuck/hidden.
+    try {
+      let active = false;
+      try { active = await this._inMeeting(); } catch (_) {}
+      const now = Date.now();
+      // "Stop tracking" suppresses the current call until the mic goes idle, so
+      // a poll doesn't immediately re-open a session while you're still in Zoom.
+      if (this.suppressed) {
+        if (!active) { this.suppressed = false; this.log('tracking resumed (mic idle)'); }
+        else {
+          try { this.onMeetingState(false, 0); } catch (_) {}
+          return;
+        }
       }
+      if (active) {
+        if (!this.sessionStart) { this.sessionStart = now; this.log('meeting STARTED'); }
+        this.lastSeen = now;
+      } else if (this.sessionStart) {
+        const start = this.sessionStart;
+        const seen = this.lastSeen || start;
+        this.sessionStart = null; this.lastSeen = null;
+        // End = now unless there was a long gap (sleep) — then trust last heartbeat.
+        const end = (now - seen) > this.idlePollMs * 3 ? seen : now;
+        const durSec = (end - start) / 1000;
+        this.log(`meeting ENDED dur=${Math.round(durSec)}s`);
+        if (durSec >= this.minSeconds) this.handleEnd(new Date(start), new Date(end)).catch((e) => this.log('handleEnd error ' + e.message));
+        else this.log('-> too short, skipped');
+      }
+      // Report state AFTER updating sessionStart so the displayed timer reflects
+      // the current segment (important when a split begins a fresh session).
+      try { this.onMeetingState(active, this.sessionStart || 0); } catch (e) { this.log('onMeetingState error ' + e.message); }
+    } catch (e) {
+      this.log('poll error ' + (e && e.message));
+    } finally {
+      // Poll faster while in a meeting so we catch the end within a few seconds.
+      this.schedule(this.sessionStart ? this.activePollMs : this.idlePollMs);
     }
-    if (active) {
-      if (!this.sessionStart) { this.sessionStart = now; this.log('meeting STARTED'); }
-      this.lastSeen = now;
-    } else if (this.sessionStart) {
-      const start = this.sessionStart;
-      const seen = this.lastSeen || start;
-      this.sessionStart = null; this.lastSeen = null;
-      // End = now unless there was a long gap (sleep) — then trust last heartbeat.
-      const end = (now - seen) > this.idlePollMs * 3 ? seen : now;
-      const durSec = (end - start) / 1000;
-      this.log(`meeting ENDED dur=${Math.round(durSec)}s`);
-      if (durSec >= this.minSeconds) this.handleEnd(new Date(start), new Date(end));
-      else this.log('-> too short, skipped');
-    }
-    // Report state AFTER updating sessionStart so the displayed timer reflects
-    // the current segment (important when a split begins a fresh session).
-    this.onMeetingState(active, this.sessionStart || 0);
-    // Poll faster while in a meeting so we catch the end within a few seconds.
-    this.schedule(this.sessionStart ? this.activePollMs : this.idlePollMs);
   }
 
   billableHours(rawHours) {
