@@ -65,10 +65,28 @@ class ZoomWatcher {
 
   start() {
     this.log(`ZoomWatcher started procs=${this.procs} idle=${this.idlePollMs / 1000}s active=${this.activePollMs / 1000}s`);
+    this.lastPollAt = Date.now();
     this.schedule(this.idlePollMs);
     this.poll();
+    // Watchdog (independent of the poll timer): if the loop hasn't ticked in a
+    // while, the scheduling chain was broken somehow — kick it back to life.
+    // This self-heals ANY stall cause, present or future, instead of needing a
+    // manual app restart.
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => {
+      const quietMs = Date.now() - (this.lastPollAt || 0);
+      const limit = (this.sessionStart ? this.activePollMs : this.idlePollMs) * 4 + 5000;
+      if (quietMs > limit) {
+        this.log(`watchdog: poll loop quiet ${Math.round(quietMs / 1000)}s — restarting`);
+        this.busy = false;            // clear any stuck flag
+        this.schedule(0);             // force an immediate poll
+      }
+    }, 15000);
   }
-  stop() { if (this.timer) clearTimeout(this.timer); this.timer = null; }
+  stop() {
+    if (this.timer) clearTimeout(this.timer); this.timer = null;
+    if (this.watchdog) clearInterval(this.watchdog); this.watchdog = null;
+  }
 
   // Self-scheduling loop so we can change cadence based on meeting state.
   schedule(ms) {
@@ -296,6 +314,7 @@ class ZoomWatcher {
     } catch (e) {
       this.log('poll error ' + (e && e.message));
     } finally {
+      this.lastPollAt = Date.now();   // watchdog liveness marker
       // Heartbeat: prove the loop is alive in the field. Logs roughly once a
       // minute (every 20 active polls / ~7 idle) so a stall is visible as the
       // heartbeat stopping while the mic is still active.

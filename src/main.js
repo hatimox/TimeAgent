@@ -14,7 +14,9 @@ const holidays = require('./holidays');
 // surfaces its popover when a second launch is attempted.
 const gotInstanceLock = app.requestSingleInstanceLock();
 if (!gotInstanceLock) {
-  app.quit();   // a copy is already running; let it stay the single instance
+  // A copy is already running; exit HARD (not the async app.quit) so this
+  // process can't linger as a watcher-less zombie that takes over the tray.
+  app.exit(0);
 } else {
   app.on('second-instance', () => { try { togglePopover(null); } catch (_) {} });
 }
