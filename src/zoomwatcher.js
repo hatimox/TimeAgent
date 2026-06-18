@@ -59,6 +59,8 @@ class ZoomWatcher {
     this.busy = false;                // a dialog is open
     this.suppressed = false;          // user stopped tracking this call; ignore
                                       // detection until the mic goes idle again
+    this.suppressedAt = 0;            // when suppression began (ms)
+    this.suppressMaxMs = 90000;       // hard cap so it can't suppress forever
   }
 
   start() {
@@ -233,7 +235,7 @@ class ZoomWatcher {
     const start = this.sessionStart;
     const end = Date.now();
     this.sessionStart = null; this.lastSeen = null;
-    this.suppressed = true;
+    this.suppressed = true; this.suppressedAt = end;
     const durSec = (end - start) / 1000;
     this.log(`meeting STOP-TRACKING dur=${Math.round(durSec)}s log=${log}`);
     if (log && durSec >= this.minSeconds) {
@@ -261,9 +263,15 @@ class ZoomWatcher {
       const now = Date.now();
       // "Stop tracking" suppresses the current call until the mic goes idle, so
       // a poll doesn't immediately re-open a session while you're still in Zoom.
+      // Bounded by a max duration so a never-idle mic (e.g. you stop tracking,
+      // then stay in back-to-back calls) can't suppress detection forever — the
+      // bug that left the Split/Stop buttons permanently hidden.
       if (this.suppressed) {
-        if (!active) { this.suppressed = false; this.log('tracking resumed (mic idle)'); }
-        else {
+        const expired = this.suppressedAt && (now - this.suppressedAt) > this.suppressMaxMs;
+        if (!active || expired) {
+          this.suppressed = false; this.suppressedAt = 0;
+          this.log(`tracking resumed (${!active ? 'mic idle' : 'suppress timeout'})`);
+        } else {
           try { this.onMeetingState(false, 0); } catch (_) {}
           return;
         }
@@ -288,6 +296,13 @@ class ZoomWatcher {
     } catch (e) {
       this.log('poll error ' + (e && e.message));
     } finally {
+      // Heartbeat: prove the loop is alive in the field. Logs roughly once a
+      // minute (every 20 active polls / ~7 idle) so a stall is visible as the
+      // heartbeat stopping while the mic is still active.
+      this._pollCount = (this._pollCount || 0) + 1;
+      if (this._pollCount % (this.sessionStart ? 20 : 8) === 0) {
+        this.log(`heartbeat poll#${this._pollCount} session=${!!this.sessionStart} suppressed=${this.suppressed}`);
+      }
       // Poll faster while in a meeting so we catch the end within a few seconds.
       this.schedule(this.sessionStart ? this.activePollMs : this.idlePollMs);
     }
