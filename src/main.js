@@ -468,8 +468,11 @@ function togglePopover(bounds) {
 }
 
 // Fetch my times and cache them; refresh popover if open.
+let _updatingTotals = false;
 async function updateTotals() {
   if (!client) return;
+  if (_updatingTotals) return;     // don't stack overlapping fetches
+  _updatingTotals = true;
   try {
     await ensureUserId();
     cachedTimes = await client.fetchMyTimes();
@@ -477,6 +480,7 @@ async function updateTotals() {
     lastUpdated = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     if (popover && popover.isVisible()) popover.webContents.send('totals-updated');
   } catch (_) { /* keep previous cache */ }
+  finally { _updatingTotals = false; }
 }
 
 // Compute Today/Week/Month for a given month offset from the cached times.

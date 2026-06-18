@@ -28,6 +28,7 @@ class TPClient {
       const data = body ? JSON.stringify(body) : null;
       const opts = {
         method,
+        timeout: 20000,                 // connect/idle socket timeout
         headers: { Accept: 'application/json' },
       };
       if (data) {
@@ -47,6 +48,9 @@ class TPClient {
         });
       });
       req.on('error', reject);
+      // Without a timeout a stalled DNS/TLS/response hangs this Promise (and its
+      // socket) forever — the lingering c-ares/DNS frames seen in the freeze.
+      req.on('timeout', () => { req.destroy(new Error('TP request timed out')); });
       if (data) req.write(data);
       req.end();
     });

@@ -64,28 +64,75 @@ class ZoomWatcher {
   }
 
   start() {
+    this._stopped = false;
     this.log(`ZoomWatcher started procs=${this.procs} idle=${this.idlePollMs / 1000}s active=${this.activePollMs / 1000}s`);
     this.lastPollAt = Date.now();
     this.schedule(this.idlePollMs);
     this.poll();
-    // Watchdog (independent of the poll timer): if the loop hasn't ticked in a
-    // while, the scheduling chain was broken somehow — kick it back to life.
-    // This self-heals ANY stall cause, present or future, instead of needing a
-    // manual app restart.
-    if (this.watchdog) clearInterval(this.watchdog);
-    this.watchdog = setInterval(() => {
-      const quietMs = Date.now() - (this.lastPollAt || 0);
-      const limit = (this.sessionStart ? this.activePollMs : this.idlePollMs) * 4 + 5000;
-      if (quietMs > limit) {
-        this.log(`watchdog: poll loop quiet ${Math.round(quietMs / 1000)}s — restarting`);
-        this.busy = false;            // clear any stuck flag
-        this.schedule(0);             // force an immediate poll
-      }
-    }, 15000);
+    this._startWatchdog();
   }
+
+  // Watchdog that does NOT depend on the JS timer phase being healthy.
+  //
+  // The old watchdog was a setInterval that called schedule(0) (another
+  // setTimeout). The observed field failure freezes the whole JS timer phase —
+  // the poll setTimeout AND the watchdog setInterval both go silent while the
+  // CFRunLoop idles — so a timer-based watchdog is frozen too and can never
+  // restart anything (no `watchdog: …` line ever appeared). We therefore also
+  // drive the watchdog from setImmediate (libuv's CHECK phase), which keeps
+  // cycling whenever the loop turns at all, independent of the timer phase.
+  // When it finds the loop quiet it rebuilds fresh timer handles and drives a
+  // recovery poll directly off setImmediate.
+  _startWatchdog() {
+    if (this.watchdog) { clearInterval(this.watchdog); this.watchdog = null; }
+    const tick = () => {
+      try {
+        const quietMs = Date.now() - (this.lastPollAt || 0);
+        const limit = (this.sessionStart ? this.activePollMs : this.idlePollMs) * 4 + 5000;
+        if (quietMs > limit) {
+          this.log(`watchdog: poll loop quiet ${Math.round(quietMs / 1000)}s — rebuilding timers`);
+          this._kick();
+        }
+      } catch (e) {
+        // Must never throw out of its own callback or the host dies.
+        try { this.log('watchdog error ' + (e && e.message)); } catch (_) {}
+      }
+    };
+    // Primary: a normal interval (cheap, works in the common case).
+    this.watchdog = setInterval(tick, 15000);
+    if (this.watchdog.unref) this.watchdog.unref();
+    // Secondary, timer-phase-independent: setImmediate runs in the check phase
+    // every loop turn. Throttled to ~15s wall time so it's free in steady state
+    // but still fires even if the timer phase is starved.
+    let lastImm = Date.now();
+    const immLoop = () => {
+      if (this._stopped) return;
+      const now = Date.now();
+      if (now - lastImm >= 15000) { lastImm = now; tick(); }
+      this._imm = setImmediate(immLoop);
+      if (this._imm.unref) this._imm.unref();
+    };
+    this._imm = setImmediate(immLoop);
+    if (this._imm.unref) this._imm.unref();
+  }
+
+  // Rebuild the polling timers from scratch; don't trust the old handles.
+  _kick() {
+    this.busy = false;
+    if (this.timer) { try { clearTimeout(this.timer); } catch (_) {} this.timer = null; }
+    this.lastPollAt = Date.now();
+    // Drive the recovery poll directly off setImmediate (CHECK phase) so it
+    // fires even if the timer phase is wedged. poll()'s own finally will then
+    // re-arm the normal setTimeout chain; if that's healthy the loop resumes,
+    // and if it's not, the next watchdog tick kicks again.
+    setImmediate(() => { try { this.poll(); } catch (_) {} });
+  }
+
   stop() {
+    this._stopped = true;
     if (this.timer) clearTimeout(this.timer); this.timer = null;
     if (this.watchdog) clearInterval(this.watchdog); this.watchdog = null;
+    if (this._imm) { try { clearImmediate(this._imm); } catch (_) {} this._imm = null; }
   }
 
   // Self-scheduling loop so we can change cadence based on meeting state.
@@ -135,17 +182,22 @@ class ZoomWatcher {
       const bin = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
       if (!bin) { resolve(null); return; }
       let settled = false;
+      let killT = null;
       const child = execFile(bin, [], { timeout: 4000, killSignal: 'SIGKILL' }, (err, out) => {
         if (settled) return; settled = true;
+        if (killT) { clearTimeout(killT); killT = null; }   // was leaked every poll
         resolve(err ? null : String(out).trim() === '1');
       });
+      // A failed spawn emits 'error'; guard so it can never throw out of the loop.
+      child.on('error', () => {});
       // Belt-and-suspenders: if the callback never fires (child wedged),
       // force-kill and resolve unknown so the caller never hangs.
-      setTimeout(() => {
+      killT = setTimeout(() => {
         if (settled) return; settled = true;
         try { child.kill('SIGKILL'); } catch (_) {}
         resolve(null);
       }, 5000);
+      if (killT.unref) killT.unref();
     });
   }
 
