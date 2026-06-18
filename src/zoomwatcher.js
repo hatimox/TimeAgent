@@ -114,9 +114,18 @@ class ZoomWatcher {
       ];
       const bin = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
       if (!bin) { resolve(null); return; }
-      execFile(bin, [], { timeout: 4000 }, (err, out) => {
+      let settled = false;
+      const child = execFile(bin, [], { timeout: 4000, killSignal: 'SIGKILL' }, (err, out) => {
+        if (settled) return; settled = true;
         resolve(err ? null : String(out).trim() === '1');
       });
+      // Belt-and-suspenders: if the callback never fires (child wedged),
+      // force-kill and resolve unknown so the caller never hangs.
+      setTimeout(() => {
+        if (settled) return; settled = true;
+        try { child.kill('SIGKILL'); } catch (_) {}
+        resolve(null);
+      }, 5000);
     });
   }
 
@@ -162,6 +171,19 @@ class ZoomWatcher {
         if (err) { resolve(null); return; }
         resolve(parseInt(String(out).trim(), 10) > 0);
       });
+    });
+  }
+
+  // Resolve `p`, but if it doesn't settle within `ms`, resolve `fallback`.
+  // Guards the poll loop against a detector promise that never resolves.
+  _withTimeout(p, ms, fallback) {
+    return new Promise((resolve) => {
+      let done = false;
+      const t = setTimeout(() => { if (!done) { done = true; resolve(fallback); } }, ms);
+      Promise.resolve(p).then(
+        (v) => { if (!done) { done = true; clearTimeout(t); resolve(v); } },
+        () => { if (!done) { done = true; clearTimeout(t); resolve(fallback); } },
+      );
     });
   }
 
@@ -231,8 +253,11 @@ class ZoomWatcher {
     // window calls) can NEVER kill the polling loop — the finally always
     // reschedules. A stalled loop was leaving the meeting UI stuck/hidden.
     try {
+      // Hard cap: a hung detector (e.g. michelper stuck after sleep) must never
+      // block the await forever and freeze the loop. Treat a timeout as "no
+      // signal" and carry on — the finally will reschedule regardless.
       let active = false;
-      try { active = await this._inMeeting(); } catch (_) {}
+      try { active = await this._withTimeout(this._inMeeting(), 6000, false); } catch (_) {}
       const now = Date.now();
       // "Stop tracking" suppresses the current call until the mic goes idle, so
       // a poll doesn't immediately re-open a session while you're still in Zoom.
