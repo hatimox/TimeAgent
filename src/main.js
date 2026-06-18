@@ -1,10 +1,23 @@
 'use strict';
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, dialog, powerMonitor } = require('electron');
 const path = require('path');
 const { TPClient } = require('./tpclient');
 const { SettingsStore } = require('./settings');
 const { ZoomWatcher } = require('./zoomwatcher');
 const holidays = require('./holidays');
+
+// Single-instance lock. After an update the user often replaces the .app while
+// the old copy is still running and reopens it — macOS can then leave TWO
+// instances alive, both polling and fighting over the tray/popover/log, which
+// left the visible window with a dead watcher (no Split/Stop buttons). Refusing
+// the second instance guarantees exactly one watcher. The first instance just
+// surfaces its popover when a second launch is attempted.
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();   // a copy is already running; let it stay the single instance
+} else {
+  app.on('second-instance', () => { try { togglePopover(null); } catch (_) {} });
+}
 
 // Combined set of days off for a year: user-added + confirmed religious +
 // (when region is Morocco) the fixed civil holidays.
@@ -743,7 +756,7 @@ async function logRecurringIfDue() {
   if (anyLogged) updateTotals();
 }
 
-app.whenReady().then(async () => {
+if (gotInstanceLock) app.whenReady().then(async () => {
   if (process.platform === 'darwin' && app.dock) {
     try { app.dock.setIcon(APP_ICON); } catch (_) {}   // for Cmd-Tab / transient dock
     app.dock.hide(); // menu-bar style
@@ -761,6 +774,9 @@ app.whenReady().then(async () => {
   setInterval(updateTotals, 5 * 60 * 1000);
   // Re-check recurring hourly too, in case the app launched before midnight / on a day off.
   setInterval(logRecurringIfDue, 60 * 60 * 1000);
+  // Restart the meeting watcher on wake — sleep can leave the audio/process
+  // detectors in a bad state, and a fresh loop is the most reliable reset.
+  powerMonitor.on('resume', () => { try { startZoomWatcher(); } catch (_) {} });
   setupAutoUpdate();
 });
 
