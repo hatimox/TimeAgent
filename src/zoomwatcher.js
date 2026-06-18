@@ -285,19 +285,31 @@ class ZoomWatcher {
       const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       const win = `${hhmm(start)}-${hhmm(end)}`;
 
-      // 1) Daily / Defined list / Choose task / Cancel
+      // 1) Daily / [Defined list] / Choose task / Cancel.
+      // "Defined list" only appears when meeting shortcuts are configured.
+      // Buttons are built dynamically and mapped back by action (not a fixed
+      // index) so omitting one doesn't shift the others.
+      // Use the ASYNC dialog: showMessageBoxSync blocks the whole main process,
+      // so a prompt left unanswered (e.g. buried after sleep/wake) would freeze
+      // the poll loop and stop all future meeting detection.
       const dynamicMeetings = cfg.dynamicMeetings || [];
       const hasDynamic = dynamicMeetings.length > 0;
-      const choice = dialog.showMessageBoxSync({
+      const actions = ['daily'];
+      const labels = ['Daily'];
+      if (hasDynamic) { actions.push('defined'); labels.push('Defined list'); }
+      actions.push('choose'); labels.push('Choose task');
+      actions.push('cancel'); labels.push('Cancel');
+      const { response } = await dialog.showMessageBox({
         type: 'question',
         message: `Meeting ended (${win}, ${hours.toFixed(2)}h)`,
         detail: 'How should this be logged?',
-        buttons: ['Daily', 'Defined list', 'Choose task', 'Cancel'],
-        defaultId: 0, cancelId: 3, noLink: true,
+        buttons: labels,
+        defaultId: 0, cancelId: actions.indexOf('cancel'), noLink: true,
       });
-      if (choice === 3) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
+      const action = actions[response];
+      if (action === 'cancel') { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
 
-      // Helper used by all three logging paths.
+      // Helper used by all logging paths.
       const logToTask = async (taskId, description, label) => {
         if (!taskId) { this.onStatus('No meeting task id set in Settings'); return; }
         if (!client) { this.onStatus('Not configured — meeting not logged'); return; }
@@ -309,13 +321,12 @@ class ZoomWatcher {
         this.log(`logged ${hours}h to ${taskId} (${label})`);
       };
 
-      if (choice === 0) {
-        // Daily
+      if (action === 'daily') {
         await logToTask(cfg.dailyTaskId, '', 'Daily');
         return;
       }
 
-      if (choice === 2) {
+      if (action === 'choose') {
         // Choose task: description + task-search prompt. Save logs the
         // meeting; Skip (or closing the prompt) discards it entirely.
         const res = await promptText(`Meeting ${win} — ${hours.toFixed(2)}h`,
@@ -327,18 +338,7 @@ class ZoomWatcher {
         return;
       }
 
-      // choice === 1: Defined list
-      if (!hasDynamic) {
-        dialog.showMessageBoxSync({
-          type: 'info',
-          message: 'No dynamic meetings configured',
-          detail: 'Add them in Settings → Meetings.',
-          buttons: ['OK'],
-          defaultId: 0, noLink: true,
-        });
-        this.onStatus(`Meeting ${win} ignored — no dynamic meetings`);
-        return;
-      }
+      // action === 'defined': Defined list (only reachable when hasDynamic)
       const picked = await pickDynamicMeeting(dynamicMeetings);
       if (!picked) { this.onStatus(`Meeting ${win} ignored`); this.log('cancelled'); return; }
       // Save logs the meeting; Skip (or closing the prompt) discards it.
